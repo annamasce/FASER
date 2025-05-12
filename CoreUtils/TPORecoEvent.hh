@@ -241,6 +241,9 @@ public:
     /// @brief Reconstruct all 2D clusters for the xz and the yz views (view=0 for XZ, and view=1 for YZ)
     void ReconstructClusters(int view);
 
+    /// @brief Reconstruct all 2D clusters with given DBscan parameters (useful for clustering optimisation)
+    void ReconstructClusters(int view, double clusters_eps, double clusters_minPts, double clusters_threshold_2dhit);
+
     /// @brief Reconstruct 3D voxels from 2D views in plastic scintillator
     void Reconstruct3DPS(int maxIter = 150);
     void Reconstruct3DPS_2(int maxIter = 150);

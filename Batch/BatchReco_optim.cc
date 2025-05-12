@@ -44,15 +44,27 @@ void load_geometry() {
     TGeoManager::Import("../GeomGDML/geometry.gdml");
 }
 
+// Converts a double into a string with fixed number of decimals
+std::string double2string(double value, int decimals) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(decimals) << value;
+    return out.str();
+}
+
 int main(int argc, char** argv) {
 
 	if (argc < 2) {
-	std::cout << "Usage: " << argv[0] << " [-mt] <run> [minevent] [maxevent] [mask]" << std::endl;
+	std::cout << "Usage: " << argv[0] << " [-mt] <run> [minevent] [maxevent] [maxevent_abs] [mask] [eps] [Npts] [thrHit] [output_path]" << std::endl;
         std::cout << "   <run>                     Run number" << std::endl;
         std::cout << "   minevent                  Minimum event number (def=0)" << std::endl;
         std::cout << "   maxevent                  Maximum event number (def=-1)" << std::endl;
+        std::cout << "   maxevent_abs              Maximum number of events to process (def=-1)" << std::endl;
         std::cout << "   mask                      To process only specific events (def=none): ";
         std::cout << "  nueCC, numuCC, nutauCC, nuNC or nuES" << std::endl;
+        std::cout << "   eps                       Cluster epsilon for DBscan (def=5)" << std::endl;
+        std::cout << "   Npts                      Cluster min number of points for DBscan (def=10)" << std::endl;
+        std::cout << "   thrHit                   Hit threshold for DBScan algorithm (def=2)" << std::endl;
+        std::cout << "   output_path                   Path of directory to store output" << std::endl;
 		return 1;
 	}
 
@@ -106,27 +118,99 @@ int main(int argc, char** argv) {
     }
     if(max_event == -1) max_event = 99999999;
 
+    int maxevent_abs = -1;
+    if(argc>argv_index) {
+        try {
+            maxevent_abs = std::stoi(argv[argv_index++]);
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Invalid argument for maxevent_abs: " << e.what() << std::endl;
+            exit(1);
+        } catch (const std::out_of_range& e) {
+            std::cerr << "Out of range for maxevent_abs: " << e.what() << std::endl;
+            exit(1);
+        }
+    }
+    if(maxevent_abs == -1) maxevent_abs = 99999999;
+
     int event_mask = 0;
     if(argc>argv_index) {
         int mask = TPOEvent::EncodeEventMask(argv[argv_index]);
         if(mask>0) {
             event_mask = mask;
         } else {
-            std::cerr << "Unknown mask " << argv[argv_index] << std::endl;
-            exit(1);            
+            if(std::string(argv[argv_index]) != "none"){
+                std::cerr << "Unknown mask " << argv[argv_index] << std::endl;
+                exit(1);
+            }
+        }
+        argv_index++;
+    }
+
+    double clusters_eps = 5;
+    if(argc>argv_index) {
+        try {
+            clusters_eps = std::stod(argv[argv_index++]);
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Invalid argument for eps: " << e.what() << std::endl;
+            exit(1);
+        } catch (const std::out_of_range& e) {
+            std::cerr << "Out of range for eps: " << e.what() << std::endl;
+            exit(1);
         }
     }
+
+    double clusters_minPts = 10;
+    if(argc>argv_index) {
+        try {
+            clusters_minPts = std::stod(argv[argv_index++]);
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Invalid argument for Npts: " << e.what() << std::endl;
+            exit(1);
+        } catch (const std::out_of_range& e) {
+            std::cerr << "Out of range for Npts: " << e.what() << std::endl;
+            exit(1);
+        }
+    }
+
+    double clusters_threshold_2dhit = 2;
+    if(argc>argv_index) {
+        try {
+            clusters_threshold_2dhit = std::stod(argv[argv_index++]);
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Invalid argument for thrHit: " << e.what() << std::endl;
+            exit(1);
+        } catch (const std::out_of_range& e) {
+            std::cerr << "Out of range for thrHit: " << e.what() << std::endl;
+            exit(1);
+        }
+    }
+
+    std::string output_path = ".";
+    if(argc>argv_index) {
+        try {
+            output_path = argv[argv_index++];
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Invalid argument for output_path: " << e.what() << std::endl;
+            exit(1);
+        } catch (const std::out_of_range& e) {
+            std::cerr << "Out of range for output_path: " << e.what() << std::endl;
+            exit(1);
+        }
+    }
+
+    std::cout << "argv_index " << argv_index << std::endl;
 
     load_geometry();
 
     std::string base_path = "input/";
 
     std::ostringstream filename;
-    filename << "Batch-TPORecevent_" << run_number << "_" << min_event << "_" << max_event;
+    filename << output_path << "/Batch-TPORecevent_" << run_number << "_" << min_event << "_" << max_event;
     if(event_mask>0) {
         const char *mask = TPOEvent::DecodeEventMask(event_mask);
         filename << "_" << mask;
     }
+    if(argv_index > 6) filename << "_eps" << double2string(clusters_eps, 2) << "_Npts" << double2string(clusters_minPts, 0) << "_thrHit" << double2string(clusters_threshold_2dhit, 2);
     filename << ".root";
 
     // Print the filename to verify
@@ -191,7 +275,7 @@ int main(int argc, char** argv) {
     long long total_time = 0;
     size_t n_events = 0;
 
-    while (keepRunning && error == 0 && ievent<max_event) {
+    while ((keepRunning && error == 0) && (ievent < max_event) && (n_events < maxevent_abs)) {
 
         auto start = std::chrono::high_resolution_clock::now();
 
@@ -279,7 +363,7 @@ int main(int argc, char** argv) {
         fPORecoEvent -> multiThread = multiThread_option;
         fPORecoEvent -> ReconstructTruth();
         fPORecoEvent -> Reconstruct2DViewsPS();
-        fPORecoEvent -> ReconstructClusters(0);
+        fPORecoEvent -> ReconstructClusters(0, clusters_eps, clusters_minPts, clusters_threshold_2dhit);
         fPORecoEvent -> Reconstruct3DPS_2();
         fPORecoEvent -> ReconstructRearCals();
         fPORecoEvent -> Reconstruct3DPS_Eflow();

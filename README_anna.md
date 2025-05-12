@@ -19,5 +19,5 @@ cp GenFit-build/bin/*.pcm GenFit-install/lib64/ # this is necessary to avoid err
 cd Batch
 ln -sfn /eos/project-f/faser-upgrade/fasercal/FASERCALDATA_v5.1 input
 make
-./batchreco.exe 130 0 100 -mt # -mt option activates multi-threading
+./batchreco.exe -mt 130 0 100 # -mt option activates multi-threading
 ```
