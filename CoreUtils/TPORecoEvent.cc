@@ -1658,12 +1658,8 @@ void TPORecoEvent::pshit2d_position(long ID, double &fix, double &fiy, double &f
 /// @param view = 0 for XZ, and .ne.0 for YZ
 void TPORecoEvent::ReconstructClusters(int view) {
 
-    // if(verbose > 0)
+    if(verbose > 0)
         std::cout << "Start ReconstructClusters: view=" << view << " ..." << std::endl;
-
-    std::cout << "recoConfig.clusters_eps: " << recoConfig.clusters_eps << std::endl;
-    std::cout << "recoConfig.clusters_minPts: " << recoConfig.clusters_minPts << std::endl;
-    std::cout << "recoConfig.clusters_threshold_2dhit: " << recoConfig.clusters_threshold_2dhit << std::endl;
 
     DBScan dbscan;
 
@@ -1679,8 +1675,6 @@ void TPORecoEvent::ReconstructClusters(int view) {
         if(ehit < recoConfig.clusters_threshold_2dhit) continue;
         double fix, fiy, fiz;
         pshit2d_position(ID, fix, fiy, fiz);
-        // long ilayer = (ID / 1000000000);
-        // std::cout << ID << "  " << ilayer << "  " << fix << "  " << fiz << std::endl;
         DBScan::Point p = {ID, ehit, (view==0) ? fix : fiy, fiz};
         points.push_back(p);
     }
@@ -1729,14 +1723,14 @@ void TPORecoEvent::ReconstructClusters(int view) {
     return a.rawenergy > b.rawenergy;
     });
 
-    // if(verbose > 0) {
+    if(verbose > 0) {
         for (const auto &c : *PSClusters)
         {
             std::cout << "Cluster ID:" << c.clusterID << " nhits=" << c.hits.size();
             std::cout << " rawEnergy(MeV): " << c.rawenergy;
             std::cout << std::endl;
         }
-    // }
+    }
 }
 
 void TPORecoEvent::ReconstructClusters(int view, double clusters_eps, double clusters_minPts, double clusters_threshold_2dhit) {
@@ -2678,9 +2672,6 @@ void TPORecoEvent::Reconstruct3DPS_2(int maxIter) {
                 long ilayer = z / nzlayer;
                 long iz = z % nzlayer;
                 long ID = x + y * 1000 + iz * 1000000 + ilayer * 1000000000;
-                // int nzlayer_2 = fTcalEvent->geom_detector.fSandwichLength / fTcalEvent->geom_detector.fScintillatorVoxelSize;
-                // double fiz = ilayer * nzlayer_2 + iz + 0.5;
-                // std::cout << ID << "  " << ilayer << "  " << x << "  " << y << "  " << fiz << std::endl;
                 struct PSVOXEL3D v = {ID, ehit, true};
                 PSvoxelmap[ID] = v;
             }
