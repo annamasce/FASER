@@ -1,0 +1,2254 @@
+#include "FaserCalDisplay.h"
+#include <iostream>
+#include <algorithm>
+#include <vector>
+#include <TEveWindow.h>
+#include <TEveViewer.h>
+#include <TSystem.h>
+#include <TStyle.h>
+#include <TGFrame.h>
+#include <TGFont.h>
+#include <TGLabel.h>
+#include <TRootEmbeddedCanvas.h>
+#include <TEveText.h>
+#include <TEveTrans.h> 
+#include <TGDMLParse.h>
+#include <TString.h>
+
+#include <TGComboBox.h>
+
+#include <TDatabasePDG.h>
+#include <TParticlePDG.h>
+
+#include <filesystem>
+#include <vector>
+#include <TLegend.h>
+
+#include <TSystem.h>
+
+namespace display
+{
+  FaserCalDisplay::FaserCalDisplay() {
+    fNumberEntry = nullptr;
+    fStatusBar = nullptr;
+    fDetectorElements = new TEveElementList("Detector Elements");
+    fHitElements = new TEveElementList("Hit Elements");
+    fPrimaryElements = new TEveElementList("Primary Elements");  
+    fSecondaryShowerElements = new TEveElementList("Secondary Shower Elements");  
+    fSecondaryHadShowerElements = new TEveElementList("Secondary Hadron Shower Elements");  
+    fPixelHitElements = new TEveElementList("Pixel Hit Elements");
+  }
+  //////////////////////////////////////////////////////////
+  FaserCalDisplay::~FaserCalDisplay() {}
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::GetDetector()
+  {
+    std::cout << "Starting GetDetector()" << std::endl;
+    // Load the GDML file using TGeoManager::Import
+    TGeoManager::Import("/data/sw/FASERCAL/FASER/GeomGDML/geometry.gdml");
+    //
+    if (!gGeoManager) {
+      std::cerr << "Failed to import GDML file." << std::endl;
+      return;
+    }
+    std::cout << "GDML file imported successfully." << std::endl;
+    //
+    TGeoVolume* gdmlTop = gGeoManager->GetTopVolume();
+    if (!gdmlTop) {
+      std::cerr << "Failed to get top volume." << std::endl;
+      return;
+    }
+    //std::cout << "Top volume set: " << gdmlTop->GetName() << std::endl;
+    TGeoIterator nextNode(gdmlTop);
+    TGeoNode* curNode;
+    //
+    while ((curNode = nextNode())) {
+      TGeoVolume* vol = curNode->GetVolume();
+      if (!vol) {
+	std::cerr << "Volume is null for node: " << curNode->GetName() << std::endl;
+	continue;
+      }
+      //
+      TGeoShape* shape = vol->GetShape();
+      if (!shape) {
+	std::cerr << "Shape is null for volume: " << vol->GetName() << std::endl;
+	continue;
+      }
+      //
+      TString nodeName(curNode->GetName());
+      TString nodePath;
+      nextNode.GetPath(nodePath);
+      //std::cout << "Processing node: " << nodeName << ", path: " << nodePath << std::endl;
+      // Get the transformation matrix of the current node
+      const TGeoMatrix* matrix = nextNode.GetCurrentMatrix();
+      if (!matrix) {
+	std::cerr << "Matrix is null for node: " << curNode->GetName() << std::endl;
+	continue;
+      }
+      //
+      const Double_t* trans = matrix->GetTranslation();
+      const Double_t* rotMatrix = matrix->GetRotationMatrix();
+      if (!trans || !rotMatrix) {
+	std::cerr << "Transformation matrix is null for node: " << curNode->GetName() << std::endl;
+	continue;
+      }
+      //
+      TGeoRotation rotation;
+      rotation.SetMatrix(rotMatrix);
+      TGeoCombiTrans transform(trans[0], trans[1], trans[2], &rotation);
+      // Create the TEveGeoShape for visualization
+      TEveGeoShape* eveShape = new TEveGeoShape(vol->GetName());
+      eveShape->SetShape(shape);
+      eveShape->SetMainTransparency(90); // Set transparency
+      eveShape->SetTransMatrix(transform);
+      //gEve->AddGlobalElement(eveShape);
+      fDetectorElements->AddElement(eveShape);
+    }
+    gEve->AddGlobalElement(fDetectorElements);
+    gEve->Redraw3D(kTRUE);
+    std::cout << "GetDetector() completed." << std::endl;
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::GetEventDisplay()
+  {
+    TEveManager* gEve = TEveManager::Create(kTRUE, "V");
+    if (gROOT->IsBatch())
+      gROOT->SetBatch(kFALSE);
+    
+    TEveRGBAPalette* pal = new TEveRGBAPalette(0, 1000);
+    TEveViewer* ev = gEve->GetDefaultViewer();
+    //ev->GetPickEvent()->Connect(this, "OnPick(TGLPhysicalShape*, TObject*, Int_t)");
+    
+    TEveWindowSlot* slot = TEveWindow::CreateWindowInTab(gEve->GetBrowser()->GetTabRight());
+    TEveWindowPack* pack = slot->MakePack();
+    pack->SetElementName("Multi View");
+    pack->SetHorizontal();
+    pack->SetShowTitleBar(kFALSE);
+    
+    pack->NewSlot()->MakeCurrent();
+    TEveViewer* T3DView = gEve->SpawnNewViewer("Y-Z View", "");
+    T3DView->GetGLViewer()->SetCurrentCamera(TGLViewer::kCameraOrthoZOY);
+    T3DView->AddScene(gEve->GetGlobalScene());
+    T3DView->AddScene(gEve->GetEventScene());
+    
+    pack = pack->NewSlot()->MakePack();
+    pack->SetShowTitleBar(kFALSE);
+    pack->NewSlot()->MakeCurrent();
+    TEveViewer* TRPhiView = gEve->SpawnNewViewer("X-Y View", "");
+    TRPhiView->GetGLViewer()->SetCurrentCamera(TGLViewer::kCameraOrthoXOY);
+    TRPhiView->AddScene(gEve->GetGlobalScene());
+    TRPhiView->AddScene(gEve->GetEventScene());
+
+    pack->NewSlot()->MakeCurrent();
+    TEveViewer* TRhoZView = gEve->SpawnNewViewer("X-Z View", "");
+    TRhoZView->GetGLViewer()->SetCurrentCamera(TGLViewer::kCameraOrthoXOZ);
+    TRhoZView->AddScene(gEve->GetGlobalScene());
+    TRhoZView->AddScene(gEve->GetEventScene());
+
+    TEveBrowser* browser = gEve->GetBrowser();
+    browser->StartEmbedding(TRootBrowser::kLeft);
+
+    TGMainFrame* frmMain = new TGMainFrame(gClient->GetRoot(), 1000, 600);
+    frmMain->SetWindowName("XX GUI");
+    frmMain->SetCleanup(kDeepCleanup);
+
+    TGVerticalFrame* hf = new TGVerticalFrame(frmMain);
+    TGGroupFrame* fGroupFrame2 = new TGGroupFrame(hf, "Event Display");
+    fGroupFrame2->SetLayoutBroken(kTRUE);
+    /////////////////////////////////////////////////////////////////////
+    // Set Event Number Button
+    int posy = 20;
+        fNumberEntryRun = new TGNumberEntryField(fGroupFrame2, -1, 200025, TGNumberFormat::kNESInteger);
+    fGroupFrame2->AddFrame(fNumberEntryRun, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 62, 2));
+    fNumberEntryRun->MoveResize(20, posy, 90, 18);
+    
+    fNumberEntry = new TGNumberEntry(fGroupFrame2, 0, 6, -1, TGNumberFormat::kNESInteger, TGNumberFormat::kNEAAnyNumber, TGNumberFormat::kNELLimitMinMax, 0, 10000);
+    fGroupFrame2->AddFrame(fNumberEntry, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 62, 2));
+    fNumberEntry->MoveResize(120, posy, 90, 18);
+    //MaskEntry = new TGNumberEntry(fGroupFrame2, 0, 6, -1, TGNumberFormat::kNESInteger, TGNumberFormat::kNEAAnyNumber, TGNumberFormat::kNELLimitMinMax, 0, 10000);
+    //fGroupFrame2->AddFrame(fNumberEntry, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 62, 2));
+    //fNumberEntry->MoveResize(20, posy, 90, 18);
+    posy += 28;
+    
+    fEventTypeComboBox = new TGComboBox(fGroupFrame2, "Event Type");
+    fEventTypeComboBox->AddEntry("NoMask", 0);
+    fEventTypeComboBox->AddEntry("nueCC", 1);
+    fEventTypeComboBox->AddEntry("numuCC", 2);
+    fEventTypeComboBox->AddEntry("nutauCC", 3);
+    fEventTypeComboBox->AddEntry("nuNC", 4);
+    fEventTypeComboBox->AddEntry("nuES", 5);
+    
+    fEventTypeComboBox->Resize(150, 20);
+    fGroupFrame2->AddFrame(fEventTypeComboBox, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 2, 2));
+    fEventTypeComboBox->MoveResize(20, posy, 90, 20);
+
+    TGTextButton* b = new TGTextButton(fGroupFrame2, "Set Event#");
+    b->Connect("Clicked()", "display::FaserCalDisplay", this, "SetEventNumber()");
+    fGroupFrame2->AddFrame(b, new TGLayoutHints(kLHintsExpandX));
+    b->MoveResize(120, posy, 90, 18);
+    posy += 28;
+    // Show Event Button
+    TGTextButton* fb = new TGTextButton(fGroupFrame2, "ShowEvent");
+    fb->Connect("Clicked()", "display::FaserCalDisplay", this, "ShowEvent()");
+    fb->MoveResize(10, posy, 100, 18);
+    fb->SetToolTipText("Show event");
+    // Dump Event Button
+    fb = new TGTextButton(fGroupFrame2, "DumpEvent");
+    fb->Connect("Clicked()", "display::FaserCalDisplay", this, "DumpEvent()");
+    fb->MoveResize(110, posy, 100, 18);
+    fb->SetToolTipText("Dump event");
+
+    posy += 25;
+    // Next Event Button
+    fb = new TGTextButton(fGroupFrame2, "Next");
+    fb->Connect("Clicked()", "display::FaserCalDisplay", this, "NextEvent()");
+    fb->MoveResize(10, posy, 100, 18);
+    fb->SetToolTipText("Show next event");
+    // Previous Event Button
+    fb = new TGTextButton(fGroupFrame2, "Previous");
+    fb->MoveResize(110, posy, 100, 18);
+    fb->Connect("Clicked()", "display::FaserCalDisplay", this, "PreviousEvent()");
+    fb->SetToolTipText("Show previous event");
+    // Hide Detector Geometry
+    posy += 25;
+    fIsolate = new TGCheckButton(fGroupFrame2, "Hide Detector Geometry");
+    fIsolate->MoveResize(10, posy, 0, 18);
+    fIsolate->Connect("Clicked()", "display::FaserCalDisplay", this, "Isolate()");
+    ////////////
+    posy += 25;
+    fPrimary = new TGCheckButton(fGroupFrame2, "Primary Particles");
+    fPrimary->MoveResize(10, posy, 0, 18);
+    fPrimary->Connect("Clicked()", "display::FaserCalDisplay", this, "ShowPrimary()");
+
+    posy += 25;
+    fEMShowers = new TGCheckButton(fGroupFrame2, "EM Showers");
+    fEMShowers->MoveResize(10, posy, 0, 18);
+    fEMShowers->Connect("Clicked()", "display::FaserCalDisplay", this, "ShowSecondaryShowers()");
+
+    fHadronShowers = new TGCheckButton(fGroupFrame2, "Hadron Showers");
+    fHadronShowers->MoveResize(110, posy, 0, 18);
+    fHadronShowers->Connect("Clicked()", "display::FaserCalDisplay", this, "ShowSecondaryHadShowers()");
+
+    posy += 25;
+    fPixelTracker = new TGCheckButton(fGroupFrame2, "Pixel Tracker");
+    fPixelTracker->MoveResize(10, posy, 0, 18);
+    fPixelTracker->Connect("Clicked()", "display::FaserCalDisplay", this, "ShowPixelHits()");
+
+    fPixelRecoTrack = new TGCheckButton(fGroupFrame2, "Pixel RecoTracks");
+    fPixelRecoTrack->MoveResize(110, posy, 0, 18);
+    fPixelRecoTrack->Connect("Clicked()", "display::FaserCalDisplay", this, "ShowPixelRecoTrack()");
+    posy += 15;
+
+    hf->AddFrame(fGroupFrame2, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 2, 2));
+    fGroupFrame2->MoveResize(0, 200, 240, 220);
+
+    TGGroupFrame* fGroupFrame3 = new TGGroupFrame(hf, "Plots");
+    fGroupFrame3->SetLayoutBroken(kTRUE);
+    fb = new TGTextButton(fGroupFrame3, "HitsInCubes");
+    fb->Connect("Clicked()","display::FaserCalDisplay",this,"CountHitsInCube()");
+    fb->MoveResize(10, 20, 110, 18);
+    
+    fb = new TGTextButton(fGroupFrame3, "AllEvents");
+    fb->MoveResize(10, 40, 110, 18);
+    fb->Connect("Clicked()","display::FaserCalDisplay",this,"LoadAllEvents()");
+
+    
+      
+    fb->SetToolTipText("CRT plots");
+    fb = new TGTextButton(fGroupFrame3, "EnergyDepositions");
+    fb->MoveResize(125, 20, 110, 18);
+    fb = new TGTextButton(fGroupFrame3, "RawData");
+    fb->MoveResize(125, 40, 110, 18);
+    fb = new TGTextButton(fGroupFrame3, "SummaryTable");
+    fb->MoveResize(10, 60, 110, 18);
+
+    hf->AddFrame(fGroupFrame3, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 2, 2));
+    fGroupFrame3->MoveResize(0, 220, 240, 100);
+
+    TGGroupFrame* fGroupFrame4 = new TGGroupFrame(hf, "Zooming");
+    fGroupFrame4->SetLayoutBroken(kTRUE);
+    posy = 20;
+    int posx = 10;
+    int dx = 20;
+
+    //fExt_b = new TGCheckButton(fGroupFrame4, "");
+    //fGroupFrame4->AddFrame(fExt_b, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 2, 2));
+    //fExt_b->MoveResize(10, posy, 110, 18);
+
+    //TGLabel* lTStep = new TGLabel(fGroupFrame4, "TSteps");
+    //lTStep->MoveResize(30, posy, 0, 18);
+
+    //fTSteps = new TGNumberEntry(fGroupFrame4, 50, 6, -1, TGNumberFormat::kNESInteger, TGNumberFormat::kNEAAnyNumber, TGNumberFormat::kNELLimitMinMax, 0, 10000);
+    //fTSteps->MoveResize(80, posy, 0, 18);
+
+    //fExt_l = new TGLabel(fGroupFrame4, " ns ");
+    //fExt_l->MoveResize(140, posy, 20, 18);
+    //fExt_NE = new TGNumberEntryField(fGroupFrame4, -1, 0, TGNumberFormat::kNESInteger);
+    //fExt_NE->MoveResize(155, posy, 75, 18);
+
+    posy += 20;
+    fHSlider_ext = new TGHSlider(fGroupFrame4, 220, kSlider1 | kScaleBoth, -1, kHorizontalFrame);
+    fHSlider_ext->SetRange(0, 50);
+    fHSlider_ext->SetPosition(0);
+    fHSlider_ext->SetPosition(extPitch);
+    fHSlider_ext->MoveResize(5, posy, 225, 15);
+    fHSlider_ext->Connect("PositionChanged(Int_t)", "display::FaserCalDisplay", this, "DoSlider(Int_t)");
+
+    hf->AddFrame(fGroupFrame4, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 2, 2));
+    fGroupFrame4->MoveResize(0, 200, 240, 100);
+
+
+
+    
+    TGGroupFrame* fGroupFrame5 = new TGGroupFrame(hf, "WaveForms");
+    fGroupFrame5->SetLayoutBroken(kTRUE);
+    posx = 10;
+    dx = 20;
+    posy = 20;
+
+    hf->AddFrame(fGroupFrame5, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 2, 2));
+    fGroupFrame5->MoveResize(0, 210, 240, 100);
+
+    TGGroupFrame* fGroupFrame6 = new TGGroupFrame(hf, "Saving");
+    fGroupFrame6->SetLayoutBroken(kTRUE);
+    posx = 10;
+    dx = 20;
+    posy = 20;
+
+    eGCBAnimation = new TGCheckButton(fGroupFrame6, "Animation");
+    eGCBAnimation->MoveResize(10, posy, 80, 20);
+    fb = new TGTextButton(fGroupFrame6, "op");
+    fb->MoveResize(90, posy, 20, 18);
+    fb = new TGTextButton(fGroupFrame6, "Save animation");
+    fb->MoveResize(125, posy, 100, 18);
+
+    posy += 21;
+    fb = new TGTextButton(fGroupFrame6, "Snapshot");
+    fb->MoveResize(10, posy, 100, 18);
+    fb = new TGTextButton(fGroupFrame6, "Save projections");
+    fb->MoveResize(125, posy, 100, 18);
+    // Change Background Color
+    posy += 21;
+    fb = new TGTextButton(fGroupFrame6, "ChangeBackgroundColour");
+    fb->MoveResize(25, posy, 150, 20);
+    fb->Connect("Clicked()", "display::FaserCalDisplay", this, "BackgroundColor()");
+    // Exit Button
+    posy += 21;
+    fb = new TGTextButton(fGroupFrame6, "Exit");
+    fb->MoveResize(55, posy, 100, 20);
+    fb->Connect("Clicked()", "display::FaserCalDisplay", this, "DoExit()");
+
+    hf->AddFrame(fGroupFrame6, new TGLayoutHints(kLHintsLeft | kLHintsTop, 2, 2, 2, 2));
+    fGroupFrame6->MoveResize(0, 260, 240, 240);
+
+    frmMain->AddFrame(hf);
+
+    // status bar
+    Int_t parts[] = {45,20,20,15};
+    fStatusBar = gEve->GetBrowser()->GetStatusBar();
+    fStatusBar->SetParts(parts,4);
+    fStatusBar->SetText("Welcome to the FASERCal EventDisplay",0);
+    
+    frmMain->MapSubwindows();
+    frmMain->Resize();
+    frmMain->MapWindow();
+
+    slot = TEveWindow::CreateWindowInTab(gEve->GetBrowser()->GetTabRight());
+    fgHtml = new TGHtml(0, 100, 100);
+    TEveWindowFrame* wf = slot->MakeFrame(fgHtml);
+    fgHtml->MapSubwindows();
+    wf->SetElementName("Summary");
+
+    browser->StopEmbedding();
+    browser->SetTabTitle("Main", 0);
+    gEve->GetBrowser()->GetTabRight()->SetTab(1);
+
+    gEve->Redraw3D(kTRUE);
+
+    GetDetector();
+    ShowAxis();
+  }
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::ShowAxis()
+  {
+    TString axisName = "Coordinate system";
+    Float_t axisArrowLength = 50.;
+    Float_t axisArrowTubeR = 0.01;
+    Color_t axisColor = kMagenta;
+    Int_t axisLabelFontSize = 15;
+    Int_t axisLabelOffset = 5;
+
+    TEveElementList* axis = new TEveElementList(axisName, axisName);
+    TEveArrow* xAxis = new TEveArrow(axisArrowLength, 0., 0.);
+    xAxis->SetMainColor(axisColor);
+    xAxis->SetTubeR(axisArrowTubeR);
+    xAxis->SetConeR(axisArrowTubeR);
+    xAxis->SetElementNameTitle("X Axis", "X");
+    axis->AddElement(xAxis);
+    TEveText* xAxisLabel = new TEveText("X");
+    xAxisLabel->SetMainColor(axisColor);
+    xAxisLabel->SetFontSize(axisLabelFontSize);
+    xAxisLabel->SetLighting(kTRUE);
+    Double_t trans[3];
+    trans[0] = axisArrowLength + axisLabelOffset;
+    trans[1] = 0;
+    trans[2] = 0;
+    xAxisLabel->PtrMainTrans()->SetPos(trans);
+    axis->AddElement(xAxisLabel);
+
+    TEveArrow* yAxis = new TEveArrow(0., axisArrowLength, 0.);
+    yAxis->SetMainColor(axisColor);
+    yAxis->SetTubeR(axisArrowTubeR);
+    yAxis->SetConeR(axisArrowTubeR);
+    yAxis->SetElementNameTitle("Y Axis", "Y");
+    axis->AddElement(yAxis);
+    TEveText* yAxisLabel = new TEveText("Y");
+    yAxisLabel->SetMainColor(axisColor);
+    yAxisLabel->SetFontSize(axisLabelFontSize);
+    yAxisLabel->SetLighting(kTRUE);
+    trans[0] = 0;
+    trans[1] = axisArrowLength + axisLabelOffset;
+    trans[2] = 0;
+    yAxisLabel->PtrMainTrans()->SetPos(trans);
+    axis->AddElement(yAxisLabel);
+
+    TEveArrow* zAxis = new TEveArrow(0., 0., axisArrowLength);
+    zAxis->SetMainColor(axisColor);
+    zAxis->SetTubeR(axisArrowTubeR);
+    zAxis->SetConeR(axisArrowTubeR);
+    zAxis->SetElementNameTitle("Z Axis", "Z");
+    axis->AddElement(zAxis);
+    TEveText* zAxisLabel = new TEveText("Z");
+    zAxisLabel->SetMainColor(axisColor);
+    zAxisLabel->SetFontSize(axisLabelFontSize);
+    zAxisLabel->SetLighting(kTRUE);
+    trans[0] = 0;
+    trans[1] = 0;
+    trans[2] = axisArrowLength + axisLabelOffset;
+    zAxisLabel->PtrMainTrans()->SetPos(trans);
+    axis->AddElement(zAxisLabel);
+
+    //gEve->AddGlobalElement(axis);
+    gEve->Redraw3D(kTRUE);
+
+ 
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::BackgroundColor()
+  {
+    gEve->GetDefaultGLViewer()->SetClearColor(0);
+    gEve->FullRedraw3D(kTRUE);
+  }
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::DoExit()
+  {
+    std::cout << "Exit application..." << std::endl;
+    gROOT->Reset();
+    gApplication->Terminate(0);
+  }
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::SetEventNumber()
+  {
+     if (!fNumberEntry) {
+        std::cerr << "fNumberEntry is not initialized!" << std::endl;
+        return;
+    }
+    fEventNumber = fNumberEntry->GetNumber();
+    if (!fNumberEntryRun) {
+        std::cerr << "fNumberEntryRun is not initialized!" << std::endl;
+        return;
+    }
+    fRunNumber = fNumberEntryRun->GetNumber();
+    fMaskNumber = fEventTypeComboBox->GetSelected();
+
+    if (!fStatusBar) {
+        std::cerr << "fStatusBar is not initialized!" << std::endl;
+        return;
+    }
+
+    fStatusBar->GetBarPart(0)->SetBackgroundColor(0xffffff);
+    fStatusBar->SetText(Form("   Showing Run#: %i Event#: %i type: %i  ", fRunNumber, fEventNumber, fMaskNumber), 0);
+    std::cout << "RunNumber is "<< fRunNumber <<  " Event Number is " << fEventNumber << " " << fMaskNumber << std::endl;
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::Isolate()
+  {
+    if (!(fIsolate->IsOn())) {
+      ApplyIsolation = kFALSE;
+      //gEve->GetGlobalScene()->SetRnrSelf(kTRUE);
+      fDetectorElements->SetRnrState(kTRUE);
+      fHitElements->SetRnrSelf(kTRUE);  // Ensure hits are shown
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);
+      std::cout << "Detector geometry will be shown" << std::endl;
+    } else {
+      ApplyIsolation = kTRUE;
+      //gEve->GetGlobalScene()->SetRnrSelf(kFALSE);
+      fDetectorElements->SetRnrState(kFALSE);
+      fHitElements->SetRnrSelf(kTRUE);  // Ensure hits are shown
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);
+      std::cout << "Detector geometry will be isolated" << std::endl;
+    }
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::ShowPrimary()
+  { 
+    if (fPrimary->IsOn())
+    {
+      std::cout << "Primary" << std::endl;
+      fDetectorElements->SetRnrState(kFALSE);
+      fHitElements->SetRnrState(kFALSE);
+      fSecondaryShowerElements->SetRnrState(kFALSE);
+      fSecondaryHadShowerElements->SetRnrState(kFALSE);
+      fPixelHitElements->SetRnrState(kFALSE);  
+
+      if(!fIsolate->IsOn())
+	fDetectorElements->SetRnrState(kTRUE);
+      else
+	fDetectorElements->SetRnrState(kFALSE);
+      
+      gEve->AddGlobalElement(fPrimaryElements);
+      fPrimaryElements->SetRnrState(kTRUE);  
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);
+    } else {
+      fHitElements->SetRnrState(kTRUE);
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);    
+    }
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::ShowSecondaryShowers()
+  {
+    if (fEMShowers->IsOn())
+    {
+      std::cout << "EM shower" << std::endl;
+      fDetectorElements->SetRnrState(kFALSE);
+      fHitElements->SetRnrState(kFALSE);
+      fPrimaryElements->SetRnrState(kFALSE);  
+      fSecondaryHadShowerElements->SetRnrState(kFALSE);
+      fPixelHitElements->SetRnrState(kFALSE);  
+
+      if(!fIsolate->IsOn())
+	fDetectorElements->SetRnrState(kTRUE);
+      else
+	fDetectorElements->SetRnrState(kFALSE);
+
+      gEve->AddGlobalElement(fSecondaryShowerElements);
+      fSecondaryShowerElements->SetRnrState(kTRUE);  
+      gStyle->SetPalette(-1);
+      gEve->Redraw3D(kTRUE);
+    } else {
+      fHitElements->SetRnrState(kTRUE);
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);    
+    }
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::ShowSecondaryHadShowers()
+  {    
+    if (fHadronShowers->IsOn())
+    {
+      std::cout << "Had shower" << std::endl;
+      fDetectorElements->SetRnrState(kFALSE);
+      fHitElements->SetRnrState(kFALSE);
+      fSecondaryShowerElements->SetRnrState(kFALSE);
+      fPrimaryElements->SetRnrState(kFALSE);
+      fPixelHitElements->SetRnrState(kFALSE);  
+
+      if(!fIsolate->IsOn())
+	fDetectorElements->SetRnrState(kTRUE);
+      else
+	fDetectorElements->SetRnrState(kFALSE);
+ 	
+      gEve->AddGlobalElement(fSecondaryHadShowerElements);
+      fSecondaryHadShowerElements->SetRnrState(kTRUE);  
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);      
+    } else {
+      fHitElements->SetRnrState(kTRUE);
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);    
+    }
+  }
+  //////////////////////////////////////////////////////////
+ void FaserCalDisplay::ShowPixelHits()
+  {    
+    if (fPixelTracker->IsOn())
+    {
+      std::cout << "Hits on PixelTracker" << std::endl;
+      fDetectorElements->SetRnrState(kFALSE);
+      fHitElements->SetRnrState(kFALSE);
+      fSecondaryShowerElements->SetRnrState(kFALSE);
+      fPrimaryElements->SetRnrState(kFALSE);
+      fSecondaryHadShowerElements->SetRnrState(kFALSE);  
+      if(!fIsolate->IsOn())
+	fDetectorElements->SetRnrState(kTRUE);
+      else
+	fDetectorElements->SetRnrState(kFALSE);
+ 	
+      gEve->AddGlobalElement(fPixelHitElements);
+      fPixelHitElements->SetRnrState(kTRUE);  
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);      
+    } else {
+      fHitElements->SetRnrState(kTRUE);
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);    
+    }
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::ShowPixelRecoTrack()
+  {
+    TEveLine *trackLine;
+    if(fPixelRecoTrack->IsOn())
+      {
+	fDetectorElements->SetRnrState(kFALSE);
+	fHitElements->SetRnrState(kFALSE);
+	fSecondaryShowerElements->SetRnrState(kFALSE);
+	fPrimaryElements->SetRnrState(kFALSE);
+	fSecondaryHadShowerElements->SetRnrState(kFALSE);
+	fPixelHitElements->SetRnrState(kTRUE);
+	if(!fIsolate->IsOn())
+	  fDetectorElements->SetRnrState(kTRUE);
+	else
+	  fDetectorElements->SetRnrState(kFALSE);
+	
+	for (auto &itrk : fPORecoEvent -> fTKTracks)
+	  {
+	    int nhits = itrk.tkhit.size();
+	    if (nhits == 0)
+	      continue;
+	    
+	    trackLine = new TEveLine(nhits);
+	    trackLine->SetName(Form("Track_%d", itrk.trackID));
+	    trackLine->SetMainColor(kBlack);
+	    trackLine->SetLineWidth(2);
+	    
+	    // Add points to the TEveLine
+	    for (auto &hit : itrk.tkhit) {
+	      double x = hit.point.x() / 10.0;
+	      double y = hit.point.y() / 10.0;
+	      double z = hit.point.z() / 10.0;
+	      trackLine->SetNextPoint(x, y, z);
+	    }
+	    // Attach metadata: track ID
+	    trackLine->SetElementName(Form("TrackID: %d", itrk.trackID));
+	    trackLine->SetUserData((void *)&itrk);  // Store a pointer to the track
+	    // Add the TEveLine
+	    gEve->AddElement(trackLine);
+	  }
+	gStyle->SetPalette(-1);
+	gEve->FullRedraw3D(kTRUE);
+	EnablePicking();
+      } else {
+      fHitElements->SetRnrState(kTRUE);
+      gStyle->SetPalette(-1);
+      gEve->FullRedraw3D(kTRUE);
+    }
+  }
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::EnablePicking()
+  {
+    //TEveSelection* sel = gEve->GetSelection();
+    //std::cout << "Number of selected elements: " << sel->NumChildren() << std::endl;
+    //if (sel->NumChildren()!=0)
+    get_selected(1);
+    
+  }
+  ////////////////
+  TObjArray *FaserCalDisplay::get_selected(int printSel)
+  {
+    selected->Clear(); // Clear any previously selected items
+
+    if (gEve->GetCurrentEvent() != NULL)
+      {
+        TEveSelection* sel = gEve->GetSelection();
+        for (TEveElement::List_i it = sel->BeginChildren(); it != sel->EndChildren(); ++it)
+	  {
+            TEveElement* e = *it;
+            if (!e) continue; // Skip null elements
+
+            // Print the element's name
+            if (printSel)
+	      printf("Selected Element: %s\n", e->GetElementName());
+	    
+            // Access the user data if available
+            TObject* obj = static_cast<TObject*>(e->GetUserData());
+            if (obj)
+	      {
+		std::cout << "User Data: " << obj->ClassName() << std::endl;
+                selected->Add(obj); // Add to the selected list
+	      }
+	  }
+      }
+    
+    return selected; // Return the list of selected objects 
+  }
+  //////////////////////////////////////////////////////////
+
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::OnPick(TGLPhysicalShape *shape, TObject *obj, Int_t ) {
+    if (!obj) return;
+  }
+
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::DoSlider(Int_t position)
+  {
+    ROOT::Math::XYZVector vertex(POevent->prim_vx.x(), POevent->prim_vx.y(), POevent->prim_vx.z());
+    
+    double zoomRadius = static_cast<double>(position) * fTcalEvent->geom_detector.fSandwichLength;
+
+    // Function to process TEveElementList recursively
+    auto processElement = [&](TEveElement* element, auto& processElementRef) -> void {
+      TEveGeoShape* shape = dynamic_cast<TEveGeoShape*>(element);
+      if (shape) {
+	//std::cout << "Shape Name: " << shape->GetName() << ", Type: TEveGeoShape" << std::endl;
+	TEveTrans& trans = shape->RefMainTrans();  // Get a reference to the transformation matrix
+	TVector3 pos = trans.GetPos();  // Get the position as a TVector3
+	double x = pos.X();  // Access the X component
+	double y = pos.Y();  // Access the Y component
+	double z = pos.Z();  // Access the Z component
+	// Calculate the distance from the vertex
+	double distance = std::sqrt(std::pow(x - vertex.X(), 2) +
+				    std::pow(y - vertex.Y(), 2) +
+				    std::pow(z - vertex.Z(), 2));
+	
+	// Show or hide the element based on the zoom radius
+	if (distance <= zoomRadius) {
+	  shape->SetRnrSelf(kTRUE);  // Show the shape
+	} else {
+	  shape->SetRnrSelf(kFALSE);  // Hide the shape
+	}
+      } else {
+	TEveElementList* list = dynamic_cast<TEveElementList*>(element);
+	if (list) {
+	  //std::cout << "Processing TEveElementList: " << list->GetName() << std::endl;
+	  for (TEveElement::List_i child = list->BeginChildren(); child != list->EndChildren(); ++child) {
+	    processElementRef(*child, processElementRef);  // Dereference the iterator to pass TEveElement*
+	  }
+	} else {
+	  std::cout << "Unknown element type: " << typeid(*element).name() << std::endl;
+	}
+      }
+    };
+    // Iterate over the elements and process them
+    for (TEveElement::List_i element = fHitElements->BeginChildren(); element != fHitElements->EndChildren(); ++element)
+      {
+        processElement(*element, processElement); 
+      }
+    
+    gEve->FullRedraw3D(kTRUE);
+  }
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::CleanViewer()
+  {
+    gEve->GetViewers()->DeleteAnnotations();
+    gEve->GetCurrentEvent()->DestroyElements();
+    TEveElement* top = gEve->GetCurrentEvent();
+    gEve->GetGlobalScene()->SetRnrSelf(kFALSE);
+    TEveRGBAPalette* pal = new TEveRGBAPalette(0, 50);
+    gGeoManager->GetTopVolume()->SetVisRaytrace(true);
+    gEve->Redraw3D(kTRUE);
+  }
+  //////////////////////////////////////////////////////////  
+  TCanvas* FaserCalDisplay::CreateCanvas(const char* plot_name, int tb)
+  {
+    TCanvas* myCan = (TCanvas*)gROOT->FindObject(plot_name);
+    if (myCan) {
+      myCan->Clear();
+    } else {
+      gEve->GetBrowser()->StartEmbedding(tb);
+      gROOT->ProcessLineFast("new TCanvas");
+      myCan = (TCanvas*)gPad;
+      myCan->SetName(plot_name);
+      gEve->GetBrowser()->StopEmbedding(plot_name);
+    }
+    return myCan;
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::CleanCanvas()
+  {
+    TCanvas* myCan;
+    myCan = (TCanvas*)gROOT->FindObject("EventInfo");
+    if (myCan) myCan->Clear();
+    myCan = (TCanvas*)gROOT->FindObject("AllEvents");
+    if (myCan) myCan->Clear();
+    myCan = (TCanvas*)gROOT->FindObject("HitsInCubes");
+    if (myCan) myCan->Clear();
+    myCan = (TCanvas*)gROOT->FindObject("RD_Cry1TPC1");
+    if (myCan) myCan->Clear();
+
+ 
+  }
+  //////////////////////////////////////////////////////////  
+  TCanvas* FaserCalDisplay::CreateTabs(const char* name)
+  {
+    TCanvas* cx = (TCanvas*)gROOT->FindObject(name);
+    if (cx) return cx;
+    
+    gEve->GetBrowser()->StartEmbedding(1, -1);
+    TGMainFrame* fMainTabFrame = new TGMainFrame(gClient->GetRoot(), 10, 10, kMainFrame | kVerticalFrame);
+    fMainTabFrame->SetName(name);
+    TGTab* fMainTab = new TGTab(fMainTabFrame, 300, 300);
+    fMainTab->SetTab(1);
+    fMainTab->Resize();
+    fMainTabFrame->AddFrame(fMainTab, new TGLayoutHints(kLHintsLeft | kLHintsTop | kLHintsExpandX | kLHintsExpandY, 2, 2, 2, 2));
+    
+    fMainTabFrame->SetMWMHints(kMWMDecorAll, kMWMFuncAll, kMWMInputModeless);
+    fMainTabFrame->MapSubwindows();
+    fMainTabFrame->Resize();
+    fMainTabFrame->MapWindow();
+    gEve->GetBrowser()->StopEmbedding(name);
+    
+    TGCompositeFrame* subTabCompositeFrame = fMainTab->AddTab(name);
+    subTabCompositeFrame->SetLayoutManager(new TGVerticalLayout(subTabCompositeFrame));
+    TRootEmbeddedCanvas* rootEmbeddedCanvas = new TRootEmbeddedCanvas(0, subTabCompositeFrame, 300, 300);
+    Int_t wfRootEmbeddedCanvas736a = rootEmbeddedCanvas->GetCanvasWindowId();
+    cx = new TCanvas(name, 10, 10, wfRootEmbeddedCanvas736a);
+    
+    rootEmbeddedCanvas->AdoptCanvas(cx);
+    subTabCompositeFrame->AddFrame(rootEmbeddedCanvas, new TGLayoutHints(kLHintsLeft | kLHintsTop | kLHintsExpandX | kLHintsExpandY, 2, 2, 2, 2));
+    
+    return cx;
+  }
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::SetMyStyle()
+  {
+    Int_t myFont = 42;
+    Double_t myWidth = 2;
+    Double_t myTSize = 0.05;
+    
+    //gROOT->SetStyle("Plain");
+    TStyle* myStyle = new TStyle("myStyle", "FaserCalDisplay plots style");
+    myStyle->SetPalette(1,0); 
+    myStyle->SetOptStat(1110);
+    myStyle->SetOptTitle(1);
+    myStyle->SetOptDate(0);
+    myStyle->SetStatColor(10);
+    myStyle->SetStatFontSize(0.05);
+    myStyle->SetStatH(0.26);
+    myStyle->SetStatW(0.26);
+    myStyle->SetTitleFont(42,"xyz"); // font option 
+    myStyle->SetLabelFont(42,"xyz");
+    myStyle->SetLabelSize(0.045,"xyz"); // size of axis value font
+    myStyle->SetTitleSize(0.053,"xz"); // size of axis title font
+    myStyle->SetTitleSize(0.053,"y"); // size of axis title font
+    myStyle->SetTitleOffset(0.9,"x");
+    myStyle->SetTitleOffset(1.3,"y");
+    myStyle->SetTitleOffset(1.0,"z");
+    myStyle->SetNdivisions(10, "x");
+    myStyle->SetNdivisions(10, "y");
+    myStyle->SetPadBottomMargin(0.13); //margins...
+    myStyle->SetPadTopMargin(0.12);
+    myStyle->SetPadLeftMargin(0.16);
+    myStyle->SetPadRightMargin(0.16);
+    myStyle->SetTitleFillColor(10);
+    myStyle->SetLineWidth(2);
+    // default canvas options
+    myStyle->SetCanvasDefW(700);
+    myStyle->SetCanvasDefH(600);
+    //myStyle->SetCanvasColor(10);
+    myStyle->SetCanvasColor(0);// canvas...
+    myStyle->SetCanvasBorderMode(0);
+    //myStyle->SetCanvasBorderMode(-1);
+    myStyle->SetCanvasBorderSize(0);
+    //myStyle->SetCanvasBorderSize(1);
+    myStyle->SetPadColor(0);
+    myStyle->SetPadBorderSize(1);
+    myStyle->SetPadBorderMode(-1);
+    myStyle->SetPadGridX(0); // grids, tickmarks
+    myStyle->SetPadGridY(0);
+    //myStyle->SetPadTickX(1);
+    //myStyle->SetPadTickY(1);
+    myStyle->SetFrameBorderSize(1);
+    myStyle->SetFrameBorderMode(-1);
+    //myStyle->SetFrameBorderMode(0);
+    myStyle->SetFrameFillColor(0);
+    //myStyle->SetFrameFillColor(10);
+    myStyle->SetFrameLineWidth(2);
+    myStyle->SetHistLineWidth(2.0);
+    myStyle->SetPaperSize(20,24); // US letter size
+    gROOT->SetStyle("myStyle");
+  }
+  ////////////////////////////////////////////////////////// 
+  void FaserCalDisplayCamera::SetProjection()
+  {
+    TGButton* btn = (TGButton*)gTQSender;
+    int id = btn->WidgetId();
+    FaserCalDisplayCamera::SetCamera(id);
+    std::cout << "ummmmmmmmmmmmm " << id << std::endl;
+  }
+  ////////////////////////////////////////////////////////// 
+  void FaserCalDisplayCamera::SetCamera(int projection)
+  {
+    TGTabElement* tab = gEve->GetBrowser()->GetTabRight()->GetCurrentTab();
+    TEveViewerList* viewers = gEve->GetViewers();
+    TGLViewer* eview = nullptr;
+    for (TEveElement::List_i it = viewers->BeginChildren(); it != viewers->EndChildren(); it++) {
+      if (strcmp(((TEveViewer*)(*it))->GetName(), tab->GetName()) == 0) {
+	eview = ((TEveViewer*)(*it))->GetGLViewer();
+	break;
+      }
+    }
+    if (eview == nullptr) {
+      eview = gEve->GetDefaultGLViewer();
+    }
+    switch (projection) {
+    case X: {
+      std::cout << "XPROJECTION" << std::endl;
+      gEve->GetDefaultGLViewer()->SetCurrentCamera(TGLViewer::kCameraOrthoZOY);
+      TGLOrthoCamera& cam = (TGLOrthoCamera&)(eview->CurrentCamera());
+      cam.Reset();
+      cam.RotateRad(-3.14159 * 0.5, 0.0);
+      cam.SetEnableRotate(1);
+    } break;
+    }
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::AddCustomNucleusParticles()
+  {
+    struct CustomParticle {
+      int pdgCode;
+      const char* name;
+      const char* title;
+      double mass;
+    };
+    
+    CustomParticle particles[] = {
+        {1000050110, "B11", "Boron-11", 11.0093054},
+        {1000060120, "C12", "Carbon-12", 12.0},
+        {1000060130, "C13", "Carbon-13", 13.0033548378},
+        {1000080160, "O16", "Oxygen-16", 15.99491461956},
+        {1000080180, "O18", "Oxygen-18", 17.9991610},
+        {1000110230, "Na23", "Sodium-23", 22.98976928},
+        {1000120260, "Mg26", "Magnesium-26", 25.98259297},
+        {1000130270, "Al27", "Aluminum-27", 26.9815385},
+        {1000140280, "Si28", "Silicon-28", 27.97692653465},
+        {1000140290, "Si29", "Silicon-29", 28.9764946653},
+        {1000140300, "Si30", "Silicon-30", 29.973770136},
+        {1000190390, "K39", "Potassium-39", 38.9637064864},
+        {1000200400, "Ca40", "Calcium-40", 39.96259098},
+        {1000200420, "Ca42", "Calcium-42", 41.95861801},
+        {1000200430, "Ca43", "Calcium-43", 42.9587666},
+        {1000200440, "Ca44", "Calcium-44", 43.9554818},
+        {1000260540, "Fe54", "Iron-54", 53.9396105},
+        {1000260560, "Fe56", "Iron-56", 55.9349375},
+        {1000260570, "Fe57", "Iron-57", 56.9353940},
+        {1000350810, "Br81", "Bromine-81", 80.9162906},
+        {1000471070, "Ag107", "Silver-107", 106.9050916},
+        {1000601420, "Nd142", "Neodymium-142", 141.9077233},
+        {1000601430, "Nd143", "Neodymium-143", 142.9098143},
+        {1000601440, "Nd144", "Neodymium-144", 143.9100873},
+        {1000601450, "Nd145", "Neodymium-145", 144.9125736},
+        {1000601460, "Nd146", "Neodymium-146", 145.9131169},
+        {1000601480, "Nd148", "Neodymium-148", 147.9168930},
+        {1000601500, "Nd150", "Neodymium-150", 149.920891},
+        {1000741820, "W182", "Tungsten-182", 181.9482042},
+        {1000741830, "W183", "Tungsten-183", 182.9502230},
+        {1000741840, "W184", "Tungsten-184", 183.9509312},
+        {1000741860, "W186", "Tungsten-186", 185.9543641},
+        {1000822040, "Pb204", "Lead-204", 203.9730440},
+        {1000822060, "Pb206", "Lead-206", 205.9744653},
+        {1000822070, "Pb207", "Lead-207", 206.9758969},
+        {1000822080, "Pb208", "Lead-208", 207.9766521}
+    };
+
+    TDatabasePDG* pdgDB = TDatabasePDG::Instance();
+
+    for (const auto& particle : particles) {
+      if (pdgDB->GetParticle(particle.pdgCode) == nullptr) {	
+        pdgDB->AddParticle(particle.name, particle.title, particle.mass, kFALSE, 0.0, 0, "Nucleus", particle.pdgCode);
+      }
+    }
+    std::cout << "Custom nucleus particles added to TDatabasePDG." << std::endl;
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::DumpEvent()
+  {
+    CleanCanvas();
+    std::cout << "Event to be dumped: " << fEventNumber <<  " from run number " << fRunNumber << " and eventtype " << fMaskNumber << std::endl;
+    //FaserCalData faserCalData;
+    //faserCalData.LoadEvent(fEventNumber);
+    LoadEvent(fRunNumber,fEventNumber, fMaskNumber);
+    TCanvas *myCan = CreateCanvas("EventInfo",1);
+    gPad->Update();
+    myCan->cd();
+    TPaveText* infoText = new TPaveText(0.1, 0.1, 0.9, 0.9);
+    infoText->AddText(Form("Run: %d Event: %d", POevent->run_number,fEventNumber));
+    std::ostringstream eventtype;
+    int pdgin = POevent->in_neutrino.m_pdg_id;
+    switch(pdgin) {
+      case -12:
+      case 12:
+        eventtype << "nu_e";
+        break;
+      case -14:
+      case  14:
+        eventtype << "nu_mu";
+        break;
+      case -16:
+      case  16:
+        eventtype << "nu_tau";
+        break;
+      default:
+        eventtype << " ?? ";
+    }
+    if(POevent->isCC) {
+      eventtype << " CC ";
+    } else {
+      eventtype << " NC ";
+    }
+
+    TDatabasePDG* pdgDB = TDatabasePDG::Instance();
+    AddCustomNucleusParticles();
+    int chargedMultiplicity = 0;
+    int neutralMultiplicity = 0;
+    int totalMultiplicity = 0;
+    std::string target;
+    for (size_t i=0; i<POevent->n_particles(); i++) {
+      struct PO& aPO = POevent->POs[i];
+      TParticlePDG* particle = pdgDB->GetParticle(aPO.m_pdg_id);
+      int charge = particle ? particle->Charge() : 0;
+      if(aPO.m_status==1)
+	{
+	  totalMultiplicity++;
+	  if (charge != 0) {
+            chargedMultiplicity++;
+	  } else {
+            neutralMultiplicity++;
+	  }
+	}
+        if(aPO.m_status==4)
+	{
+	  if(!POevent->is_neutrino(aPO.m_pdg_id))
+	    {
+	      target = particle ? particle->GetName() : "Unknown";
+	      std::cout << "check target: "<< target << std::endl;
+	      
+	    }
+	}
+    }
+    infoText->AddText(Form("Interaction: %s + %s ", eventtype.str().c_str(),target.c_str()));
+    infoText->AddText(Form("Neutrino Energy: %.3f GeV",POevent->in_neutrino.m_energy));
+    infoText->AddText(Form("Primary Vtx: %.3f %.3f %.3f",POevent->prim_vx.x(),POevent->prim_vx.y(),POevent->prim_vx.z()));
+    infoText->AddText(Form("Multipcity: %d [Charged: %d Neutral: %d]",totalMultiplicity,chargedMultiplicity,neutralMultiplicity));
+    if(POevent->isCC)
+      {
+	struct PO& outlepton = POevent->out_lepton;
+	TParticlePDG* particle = pdgDB->GetParticle(outlepton.m_pdg_id);
+	double plepton = TMath::Sqrt(outlepton.m_px*outlepton.m_px+outlepton.m_py*outlepton.m_py+outlepton.m_pz*outlepton.m_pz);
+	infoText->AddText(Form("Lepton: %s P = %.1f GeV/c2 E= %.1f GeV",particle->GetName(),plepton,outlepton.m_energy));
+      }
+    infoText->AddText(Form("Number of segments: %lu", fTcalEvent->getfTracks().size()));
+    infoText->AddText(Form("----------------------------"));
+    infoText->AddText(Form("Jet: %.3f %.3f %.3f", POevent->jetpx, POevent->jetpy, POevent->jetpz));
+    infoText->AddText(Form("Sum final state: %.3f %.3f %.3f", POevent->spx, POevent->spy, POevent->spz));
+    infoText->AddText(Form("Sum final state (Vis): %.3f %.3f %.3f", POevent->vis_spx, POevent->vis_spy, POevent->vis_spz));
+    infoText->AddText(Form("Ptmiss: %.3f  Evis: %.3f ", POevent->ptmiss, POevent->Evis));
+
+    infoText->Draw();
+    gPad->Update();
+    myCan->Update();
+  }
+  //////////////////////////////////////////////////////////  
+  void FaserCalDisplay::ShowEvent()
+  {
+    std::cout << "Event to be shown " << fEventNumber << std::endl;
+    DrawEvent(fRunNumber, fEventNumber, fMaskNumber);
+    DumpEvent();
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::NextEvent()
+  {
+    fCurrentEventNumber = fEventNumber;
+    fEventNumber = fCurrentEventNumber + 1;
+    std::cout << "Next Event Number is " << fEventNumber << std::endl;
+    DrawEvent(fRunNumber, fEventNumber, fMaskNumber);
+    DumpEvent();
+    fStatusBar->GetBarPart(0)->SetBackgroundColor(0xffffff);
+    fStatusBar->SetText(Form("   Showing Run#: %i Event#: %i type: %i  ", fRunNumber, fEventNumber, fMaskNumber), 0);
+  }
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::PreviousEvent()
+  {
+    fCurrentEventNumber = fEventNumber;
+    fEventNumber = fCurrentEventNumber - 1;
+    std::cout << "Previous Event Number is " << fEventNumber << std::endl;
+    DrawEvent(fRunNumber, fEventNumber, fMaskNumber);
+    DumpEvent();
+    fStatusBar->GetBarPart(0)->SetBackgroundColor(0xffffff);
+    fStatusBar->SetText(Form("   Showing Run#: %i Event#: %i type: %i  ", fRunNumber, fEventNumber, fMaskNumber), 0);
+  }
+  //////////////////////////////////////////////////////////
+  std::string FaserCalDisplay::HandleEventTypeSelection(Int_t id)
+  {
+    std::string selectedEventType;
+    
+    switch (id)
+      {
+      case 1:
+	selectedEventType = "nueCC";
+	break;
+      case 2:
+	selectedEventType = "numuCC";
+	break;
+      case 3:
+	selectedEventType = "nutauCC";
+	break;
+      case 4:
+	selectedEventType = "nuNC";
+	break;
+      case 5:
+	selectedEventType = "nuES";
+	break;
+      default:
+	selectedEventType = "NoMask";
+	break;
+      }
+    
+    std::cout << "Selected Event Type: " << selectedEventType << std::endl;
+    return selectedEventType;
+  }
+  //////////////////////////////////////////////////////////
+  //void FaserCalData::LoadEvent(int ievent)
+  void FaserCalDisplay::LoadEvent(int irun, int ievent, int imask)
+  {
+    
+    std::string base_path = "input/";
+
+    std::string mask = HandleEventTypeSelection(imask);
+    
+    std::string file_path;
+    if (imask!=0) 
+      file_path = base_path + "FASERG4-Tcalevent_" +std::to_string(irun)+"_"+std::to_string(ievent)+"_"+mask+".root";
+    else
+      file_path = base_path + "FASERG4-Tcalevent_" +std::to_string(irun)+"_"+std::to_string(ievent)+".root";
+
+    // Create an instance of TcalEvent and TPOEvent
+    fTcalEvent = new TcalEvent();
+    POevent = new TPOEvent();
+    
+    std::cout << file_path << std::endl;
+    if (!gSystem->AccessPathName(file_path.c_str())) {
+      
+      //
+      fTcalEvent -> Load_event(base_path, irun, ievent, imask, POevent);
+      std::cout << "Transverse size " << fTcalEvent->geom_detector.fScintillatorSizeX << " mm " << std::endl;
+      std::cout << "Total size of one sandwich layer " << fTcalEvent->geom_detector.fSandwichLength << " mm " << std::endl;
+      std::cout << "Number of layers " << fTcalEvent->geom_detector.NRep << std::endl;
+      std::cout << "Voxel size " << fTcalEvent->geom_detector.fScintillatorVoxelSize << " mm " << std::endl;
+      std::cout << " copied digitized tracks " << fTcalEvent->getfTracks().size() << std::endl;
+      fTcalEvent -> fTPOEvent -> dump_event();
+      fPORecoEvent = new TPORecoEvent(fTcalEvent, fTcalEvent->fTPOEvent);
+      // Modification based on Andre's changes
+      //fPORecoEvent -> Reconstruct3DPS();
+      //fPORecoEvent -> Dump();
+      std::cout << "Start reconstruction of PORecs..." << std::endl;
+      fPORecoEvent -> ReconstructTruth();
+      std::cout << "Start reconstruction of clusters..." << std::endl;
+      fPORecoEvent -> Reconstruct2DViewsPS();
+      fPORecoEvent->Reconstruct3DPS_2();
+      fPORecoEvent -> ReconstructRearCals();
+      fPORecoEvent -> ReconstructClusters(0);    // this is very slow
+      fPORecoEvent -> Reconstruct3DPS_Eflow();
+      fPORecoEvent->TrackReconstruct();
+      fPORecoEvent->PSVoxelParticleFilter();
+    } else {
+      std::cerr << "#########################################################" << std::endl;
+      std::cerr << "File not found: " << file_path << std::endl;
+      std::cerr << "#########################################################" << std::endl;
+      if (fStatusBar) {
+	fStatusBar->GetBarPart(0)->SetBackgroundColor(kRed);
+	fStatusBar->SetText(Form("Warning: File not found for event #%d", ievent), 0);
+      }
+    }
+  }
+
+
+  //////////////////////////////////////////////////////////
+  /*
+  //////////////////////////////////////////////////////////
+  //void FaserCalData::LoadEvent(int ievent)
+  void FaserCalDisplay::LoadEvent(int irun, int ievent, int imask)
+  {
+    
+    std::string base_path = "input/";
+
+    std::string mask = HandleEventTypeSelection(imask);
+    
+    std::string file_path;
+    if (imask!=0) 
+      file_path = base_path + "FASERG4-Tcalevent_" +std::to_string(irun)+"_"+std::to_string(ievent)+"_"+mask+".root";
+    else
+      file_path = base_path + "FASERG4-Tcalevent_" +std::to_string(irun)+"_"+std::to_string(ievent)+".root";
+
+    // Create an instance of TcalEvent and TPOEvent
+    fTcalEvent = new TcalEvent();
+    POevent = new TPOEvent();
+    
+    std::cout << file_path << std::endl;
+    if (!gSystem->AccessPathName(file_path.c_str())) {
+      
+      //
+      fTcalEvent -> Load_event(base_path, irun, ievent, imask, POevent);
+      std::cout << "Transverse size " << fTcalEvent->geom_detector.fScintillatorSizeX << " mm " << std::endl;
+      std::cout << "Total size of one sandwich layer " << fTcalEvent->geom_detector.fSandwichLength << " mm " << std::endl;
+      std::cout << "Number of layers " << fTcalEvent->geom_detector.NRep << std::endl;
+      std::cout << "Voxel size " << fTcalEvent->geom_detector.fScintillatorVoxelSize << " mm " << std::endl;
+      std::cout << " copied digitized tracks " << fTcalEvent->getfTracks().size() << std::endl;
+      fTcalEvent -> fTPOEvent -> dump_event();
+      fPORecoEvent = new TPORecoEvent(fTcalEvent, fTcalEvent->fTPOEvent);
+      fPORecoEvent -> Reconstruct3DPS();
+      fPORecoEvent -> Dump();
+    } else {
+      std::cerr << "#########################################################" << std::endl;
+      std::cerr << "File not found: " << file_path << std::endl;
+      std::cerr << "#########################################################" << std::endl;
+      if (fStatusBar) {
+	fStatusBar->GetBarPart(0)->SetBackgroundColor(kRed);
+	fStatusBar->SetText(Form("Warning: File not found for event #%d", ievent), 0);
+      }
+    }
+  }
+  void FaserCalDisplay::LoadAllEvents()
+  {
+
+    const std::string& folder_path = "input/";
+    std::vector<std::string> file_paths;
+    
+    // Get all file paths in the input directory
+    for (const auto& entry : std::filesystem::directory_iterator(folder_path))
+    {
+      file_paths.push_back(entry.path().string());
+    }
+
+    if (gROOT->FindObject("hMultiplicity")) delete gROOT->FindObject("hMultiplicity");
+    if (gROOT->FindObject("hChargeMultiplicity")) delete gROOT->FindObject("hChargeMultiplicity");
+    if (gROOT->FindObject("hNeutralMultiplicity")) delete gROOT->FindObject("hNeutralMultiplicity");
+    if (gROOT->FindObject("hGammaMultiplicity")) delete gROOT->FindObject("hGammaMultiplicity");
+    if (gROOT->FindObject("hNeutronMultiplicity")) delete gROOT->FindObject("hNeutronMultiplicity");
+    if (gROOT->FindObject("hNeutrinoEnergy")) delete gROOT->FindObject("hNeutrinoEnergy");
+    
+    TH1F* hMultiplicity = new TH1F("hMultiplicity", "Particle Multiplicity;Multiplicity;Counts", 50, -0.5, 59);
+    TH1F* hChargeMultiplicity = new TH1F("hChargeMultiplicity", "Particle Multiplicity;Multiplicity;Counts", 50, -0.5, 59);
+    TH1F* hNeutralMultiplicity = new TH1F("hNeutralMultiplicity", "Particle Multiplicity;Multiplicity;Counts", 50, -0.5, 59);
+    TH1F* hGammaMultiplicity = new TH1F("hGammaMultiplicity", "Particle Multiplicity;Multiplicity;Counts", 50, -0.5, 59);
+    TH1F* hNeutronMultiplicity = new TH1F("hNeutronMultiplicity", "Particle Multiplicity;Multiplicity;Counts", 50, -0.5, 59);
+    TH1F* hNeutrinoEnergy = new TH1F("hNeutrinoEnergy", "Neutrino Energy;Energy (GeV);Counts", 300, 0, 3000);
+    TDatabasePDG* pdgDB = TDatabasePDG::Instance();
+    AddCustomNucleusParticles();
+    
+    // Loop over each file and extract information
+    
+    for (const std::string& file_path : file_paths)
+      {
+        std::cout << "Processing file: " << file_path << std::endl;
+	// I need event number extracted from the filename
+	std::string base_name = std::filesystem::path(file_path).stem().string();
+	std::cout << "basename " << base_name << std::endl;
+	
+	std::istringstream ss(base_name);
+        std::string token;
+        std::vector<std::string> parts;
+	while (std::getline(ss, token, '_'))
+	  {
+	    parts.push_back(token);
+	  }
+	if (parts.size() < 4)
+	  {
+            std::cerr << "Error: Invalid filename format, unable to parse: " << base_name << std::endl;
+            continue; // Skip this file if the format is incorrect
+	  }
+	try {
+
+	  std::cout << parts[0] << " " << parts[1] << " " << parts[2] << " " << parts[3] << std::endl;
+	  
+	  // parts[2] the event number
+	  std::string event_number_str = parts[2];
+	  int ievent = std::stoi(event_number_str);
+	  
+	  // parts[3] the run number
+	  std::string run_number_str = parts[1];
+	  int irun = std::stoi(run_number_str);
+	  
+	  // parts[4] should be the mask or some string identifier
+	  std::string mask_str = parts[3];
+	  
+	  std::cout << "Event Number: " << ievent << ", Run Number: " << irun << ", Mask: " << mask_str << std::endl;
+	  int imask;
+	  
+	  if(mask_str == "nueCC"){
+	    imask = 1;
+	  }
+	  else if(mask_str == "numuCC"){
+	    imask = 2;
+	  }
+	  else if(mask_str == "nutauCC"){
+	    imask = 3;
+	  }
+	  else if(mask_str == "nuNC"){
+	    imask = 4;
+	  }
+	  else if(mask_str == "nuES"){
+	    imask = 5;
+	  }
+	  
+	  fTcalEvent = new TcalEvent();
+	  POevent = new TPOEvent();
+	  fTcalEvent->Load_event("input/", irun, ievent,imask,POevent);
+	  int chargedMultiplicity = 0;
+	  int neutralMultiplicity = 0;
+	  int totalMultiplicity = 0;
+	  int gammaMultiplicity =0;
+	  int neutronMultiplicity =0;
+	  for (size_t i = 0; i < POevent->n_particles(); i++)
+	    {
+	      struct PO& aPO = POevent->POs[i];
+	      TParticlePDG* particle = pdgDB->GetParticle(aPO.m_pdg_id);
+	      int charge = particle ? particle->Charge() : 0;
+	      
+	      if (aPO.m_status == 1)
+		{
+		  totalMultiplicity++;
+		  if (charge != 0) {
+		    chargedMultiplicity++;
+		  }
+		  else {
+		    neutralMultiplicity++;
+		  }
+		  if(aPO.m_pdg_id==22)
+		    gammaMultiplicity++;
+		  if(aPO.m_pdg_id==2112)
+		    neutronMultiplicity++;
+		}
+	    }
+	  hMultiplicity->Fill(totalMultiplicity);
+	  hGammaMultiplicity->Fill(gammaMultiplicity);
+	  hNeutronMultiplicity->Fill(neutronMultiplicity);
+	  hChargeMultiplicity->Fill(chargedMultiplicity);
+	  hNeutralMultiplicity->Fill(neutralMultiplicity);
+	  hNeutrinoEnergy->Fill(POevent->in_neutrino.m_energy);
+	  
+	  
+
+
+	  
+        } catch (const std::invalid_argument& e) {
+	  std::cerr << "Error: Invalid number format in filename: " << base_name << " - " << e.what() << std::endl;
+        } catch (const std::out_of_range& e) {
+	  std::cerr << "Error: Number out of range in filename: " << base_name << " - " << e.what() << std::endl;
+        }
+	
+      }
+    */
+    /*
+      std::string event_number_str = base_name.substr(base_name.find_last_of('_') + 2);
+      std::cout << event_number_str << std::endl;
+      
+      int ievent = std::stoi(event_number_str);
+      std::cout << "event " << event_number_str << " " << ievent << std::endl;
+      std::string run_number_str = base_name.substr(base_name.find_last_of('_') + 3);
+      int irun = std::stoi(run_number_str);
+      std::string mask_str = base_name.substr(base_name.find_last_of('_') + 1);
+      int imask;
+
+      std::cout << base_name << " " << ievent << " " << irun << " " << mask_str << std::endl;
+	
+	if(mask_str == "nueCC"){
+	  imask = 1;
+	}
+	else if(mask_str == "numuCC"){
+	  imask = 2;
+	}
+	else if(mask_str == "nutauCC"){
+	  imask = 3;
+	}
+	else if(mask_str == "nuNC"){
+	  imask = 4;
+	}
+	else if(mask_str == "nuES"){
+	  imask = 5;
+	}
+	  
+        fTcalEvent = new TcalEvent();
+        POevent = new TPOEvent();
+        fTcalEvent->Load_event("input/", irun, ievent,imask,POevent);
+	int chargedMultiplicity = 0;
+        int neutralMultiplicity = 0;
+        int totalMultiplicity = 0;
+	int gammaMultiplicity =0;
+	int neutronMultiplicity =0;
+	for (size_t i = 0; i < POevent->n_particles(); i++)
+	  {
+            struct PO& aPO = POevent->POs[i];
+            TParticlePDG* particle = pdgDB->GetParticle(aPO.m_pdg_id);
+            int charge = particle ? particle->Charge() : 0;
+	    
+            if (aPO.m_status == 1)
+	      {
+                totalMultiplicity++;
+                if (charge != 0) {
+		  chargedMultiplicity++;
+                }
+                else {
+		  neutralMultiplicity++;
+                }
+		if(aPO.m_pdg_id==22)
+		  gammaMultiplicity++;
+		if(aPO.m_pdg_id==2112)
+		  neutronMultiplicity++;
+	      }
+	  }
+	hMultiplicity->Fill(totalMultiplicity);
+	hGammaMultiplicity->Fill(gammaMultiplicity);
+	hNeutronMultiplicity->Fill(neutronMultiplicity);
+	hChargeMultiplicity->Fill(chargedMultiplicity);
+	hNeutralMultiplicity->Fill(neutralMultiplicity);
+        hNeutrinoEnergy->Fill(POevent->in_neutrino.m_energy);
+      }
+	*/
+  /*
+    // the maximum bin content across all histograms
+    double maxBinContent = std::max({hMultiplicity->GetMaximum(), hChargeMultiplicity->GetMaximum(), hNeutralMultiplicity->GetMaximum(), hGammaMultiplicity->GetMaximum(), hNeutronMultiplicity->GetMaximum()});
+    
+    // Set the maximum y-axis range for all histograms
+    hMultiplicity->SetMaximum(maxBinContent * 1.1); 
+    hChargeMultiplicity->SetMaximum(maxBinContent * 1.1);
+    hNeutralMultiplicity->SetMaximum(maxBinContent * 1.1);
+    hGammaMultiplicity->SetMaximum(maxBinContent * 1.1);
+    hNeutronMultiplicity->SetMaximum(maxBinContent * 1.1);
+   
+
+    SetMyStyle();
+    TCanvas *myCan = CreateCanvas("AllEvents",1);
+    gPad->Update();
+    myCan->Divide(1,2);
+    myCan->cd(1);
+    hMultiplicity->SetLineWidth(2);
+    hMultiplicity->Draw();
+    hChargeMultiplicity->SetLineWidth(2);
+    hChargeMultiplicity->SetLineColor(kRed);
+    hChargeMultiplicity->Draw("same");
+    hNeutralMultiplicity->SetLineWidth(2);
+    hNeutralMultiplicity->SetLineColor(kRed);
+    hNeutralMultiplicity->Draw("same");
+    hGammaMultiplicity->SetLineWidth(2);
+    hGammaMultiplicity->SetLineColor(kYellow);
+    hGammaMultiplicity->Draw("same");
+    hNeutronMultiplicity->SetLineWidth(2);
+    hNeutronMultiplicity->SetLineColor(kOrange);
+    hNeutronMultiplicity->Draw("same");
+    
+    TLegend *myl = new TLegend(0.6,0.5,0.8,0.7);
+    myl->AddEntry(hMultiplicity,"Total","L");
+    myl->AddEntry(hChargeMultiplicity,"Charged","L");
+    myl->AddEntry(hNeutralMultiplicity,"Neutral","L");
+    myl->AddEntry(hGammaMultiplicity,"Gamma","L");
+    myl->AddEntry(hNeutronMultiplicity,"Neutron","L");
+    myl->SetBorderSize(0);
+    myl->SetFillColor(0);
+    myl->Draw("same");
+    
+    gPad->Update();
+    myCan->cd(2);
+    hNeutrinoEnergy->SetLineWidth(2);
+    hNeutrinoEnergy->Draw();
+    gPad->Update();
+    myCan->Update(); 
+    }*/
+  //////////////////////////////////////////////////////////
+void FaserCalDisplay::LoadAllEvents()
+{
+  const std::string& folder_path = "input/";
+  std::vector<std::string> file_paths;
+  
+  // Get all file paths in the input directory
+  for (const auto& entry : std::filesystem::directory_iterator(folder_path))
+    {
+      file_paths.push_back(entry.path().string());
+    }
+
+  // Delete existing histograms if they exist
+  const std::vector<std::string> histNames = {
+    "hMultiplicity_nueCC", "hMultiplicity_numuCC", "hMultiplicity_nutauCC", "hMultiplicity_nuNC", "hMultiplicity_nuES",
+    "hMultiplicityC_nueCC", "hMultiplicityC_numuCC", "hMultiplicityC_nutauCC", "hMultiplicityC_nuNC", "hMultiplicityC_nuES",
+    "hMultiplicity0_nueCC", "hMultiplicity0_numuCC", "hMultiplicity0_nutauCC", "hMultiplicity0_nuNC", "hMultiplicity0_nuES",
+    "hMultiplicityN_nueCC", "hMultiplicityN_numuCC", "hMultiplicityN_nutauCC", "hMultiplicityN_nuNC", "hMultiplicityN_nuES",
+    "hMultiplicityGm_nueCC", "hMultiplicityGm_numuCC", "hMultiplicityGm_nutauCC", "hMultiplicityGm_nuNC", "hMultiplicityGm_nuES",
+    "hNeutrinoEnergy_nueCC", "hNeutrinoEnergy_numuCC", "hNeutrinoEnergy_nutauCC", "hNeutrinoEnergy_nuNC", "hNeutrinoEnergy_nuES"
+  };
+  
+  for (const auto& name : histNames) {
+    if (gROOT->FindObject(name.c_str())) delete gROOT->FindObject(name.c_str());
+  }
+  /*
+  if (gROOT->FindObject("hMultiplicity_nueCC")) delete gROOT->FindObject("hMultiplicity_nueCC");
+  if (gROOT->FindObject("hMultiplicity_numuCC")) delete gROOT->FindObject("hMultiplicity_numuCC");
+  if (gROOT->FindObject("hMultiplicity_nutauCC")) delete gROOT->FindObject("hMultiplicity_nutauCC");
+  if (gROOT->FindObject("hMultiplicity_nuNC")) delete gROOT->FindObject("hMultiplicity_nuNC");
+  if (gROOT->FindObject("hMultiplicity_nuES")) delete gROOT->FindObject("hMultiplicity_nuES");
+  
+  if (gROOT->FindObject("hMultiplicityC_nueCC")) delete gROOT->FindObject("hMultiplicityC_nueCC");
+  if (gROOT->FindObject("hMultiplicityC_numuCC")) delete gROOT->FindObject("hMultiplicityC_numuCC");
+  if (gROOT->FindObject("hMultiplicityC_nutauCC")) delete gROOT->FindObject("hMultiplicityC_nutauCC");
+  if (gROOT->FindObject("hMultiplicityC_nuNC")) delete gROOT->FindObject("hMultiplicityC_nuNC");
+  if (gROOT->FindObject("hMultiplicityC_nuES")) delete gROOT->FindObject("hMultiplicityC_nuES");
+  
+  if (gROOT->FindObject("hMultiplicity0_nueCC")) delete gROOT->FindObject("hMultiplicity0_nueCC");
+  if (gROOT->FindObject("hMultiplicity0_numuCC")) delete gROOT->FindObject("hMultiplicity0_numuCC");
+  if (gROOT->FindObject("hMultiplicity0_nutauCC")) delete gROOT->FindObject("hMultiplicity0_nutauCC");
+  if (gROOT->FindObject("hMultiplicity0_nuNC")) delete gROOT->FindObject("hMultiplicity0_nuNC");
+  if (gROOT->FindObject("hMultiplicity0_nuES")) delete gROOT->FindObject("hMultiplicity0_nuES");
+  
+  if (gROOT->FindObject("hMultiplicityN_nueCC")) delete gROOT->FindObject("hMultiplicityN_nueCC");
+  if (gROOT->FindObject("hMultiplicityN_numuCC")) delete gROOT->FindObject("hMultiplicityN_numuCC");
+  if (gROOT->FindObject("hMultiplicityN_nutauCC")) delete gROOT->FindObject("hMultiplicityN_nutauCC");
+  if (gROOT->FindObject("hMultiplicityN_nuNC")) delete gROOT->FindObject("hMultiplicityN_nuNC");
+  if (gROOT->FindObject("hMultiplicityN_nuES")) delete gROOT->FindObject("hMultiplicityN_nuES");
+  
+  if (gROOT->FindObject("hMultiplicityGm_nueCC")) delete gROOT->FindObject("hMultiplicityGm_nueCC");
+  if (gROOT->FindObject("hMultiplicityGm_numuCC")) delete gROOT->FindObject("hMultiplicityGm_numuCC");
+  if (gROOT->FindObject("hMultiplicityGm_nutauCC")) delete gROOT->FindObject("hMultiplicityGm_nutauCC");
+  if (gROOT->FindObject("hMultiplicityGm_nuNC")) delete gROOT->FindObject("hMultiplicityGm_nuNC");
+  if (gROOT->FindObject("hMultiplicityGm_nuES")) delete gROOT->FindObject("hMultiplicityGm_nuES");
+  
+  if (gROOT->FindObject("hNeutrinoEnergy_nuES")) delete gROOT->FindObject("hNeutrinoEnergy_nueCC");
+  if (gROOT->FindObject("hNeutrinoEnergy_nuES")) delete gROOT->FindObject("hNeutrinoEnergy_numuCC");
+  if (gROOT->FindObject("hNeutrinoEnergy_nuES")) delete gROOT->FindObject("hNeutrinoEnergy_nutauCC");
+  if (gROOT->FindObject("hNeutrinoEnergy_nuNC")) delete gROOT->FindObject("hNeutrinoEnergy_nuNC");
+  if (gROOT->FindObject("hNeutrinoEnergy_nuES")) delete gROOT->FindObject("hNeutrinoEnergy_nuES");
+  */
+  // Histograms for each mask type
+  std::map<std::string, TH1F*> hMultiplicity;
+  std::map<std::string, TH1F*> hMultiplicity0;
+  std::map<std::string, TH1F*> hMultiplicityC;
+  std::map<std::string, TH1F*> hMultiplicityGm;
+  std::map<std::string, TH1F*> hMultiplicityN;
+  std::map<std::string, TH1F*> hNeutrinoEnergy;
+
+  // Initialize histograms
+  std::vector<std::string> masks = {"nueCC", "numuCC", "nutauCC", "nuNC", "nuES"};
+  for (const auto& mask : masks) {
+    hMultiplicity[mask] = new TH1F(("hMultiplicity_" + mask).c_str(), ("Multiplicity " + mask + ";Multiplicity;Counts").c_str(), 50, -0.5, 59);
+    hMultiplicityC[mask] = new TH1F(("hMultiplicityC_" + mask).c_str(), ("Charged Multiplicity " + mask + ";Multiplicity;Counts").c_str(), 50, -0.5, 59);
+    hMultiplicity0[mask] = new TH1F(("hMultiplicity0_" + mask).c_str(), ("Neutral Multiplicity " + mask + ";Multiplicity;Counts").c_str(), 50, -0.5, 59);
+    hMultiplicityGm[mask] = new TH1F(("hMultiplicityGm_" + mask).c_str(), ("Gamma Multiplicity " + mask + ";Multiplicity;Counts").c_str(), 50, -0.5, 59);
+    hMultiplicityN[mask] = new TH1F(("hMultiplicityN_" + mask).c_str(), ("Neutron Multiplicity " + mask + ";Multiplicity;Counts").c_str(), 50, -0.5, 59);
+    hNeutrinoEnergy[mask] = new TH1F(("hNeutrinoEnergy_" + mask).c_str(), ("Neutrino Energy " + mask + ";Energy (GeV);Counts").c_str(), 300, 0, 3000);
+  }
+  
+  /*
+  hMultiplicity["nueCC"] = new TH1F("hMultiplicity_nueCC", "Multiplicity nueCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicity["numuCC"] = new TH1F("hMultiplicity_numuCC", "Multiplicity numuCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicity["nutauCC"] = new TH1F("hMultiplicity_nutauCC", "Multiplicity nutauCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicity["nuNC"] = new TH1F("hMultiplicity_nuNC", "Multiplicity nuNC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicity["nuES"] = new TH1F("hMultiplicity_nuES", "Multiplicity nuES;Multiplicity;Counts", 50, -0.5, 59);
+  
+  hMultiplicityC["nueCC"] = new TH1F("hMultiplicityC_nueCC", "Multiplicity nueCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityC["numuCC"] = new TH1F("hMultiplicityC_numuCC", "Multiplicity numuCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityC["nutauCC"] = new TH1F("hMultiplicityC_nutauCC", "Multiplicity nutauCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityC["nuNC"] = new TH1F("hMultiplicityC_nuNC", "Multiplicity nuNC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityC["nuES"] = new TH1F("hMultiplicityC_nuES", "Multiplicity nuES;Multiplicity;Counts", 50, -0.5, 59);
+  
+  hMultiplicity0["nueCC"] = new TH1F("hMultiplicity0_nueCC", "Multiplicity nueCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicity0["numuCC"] = new TH1F("hMultiplicity0_numuCC", "Multiplicity numuCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicity0["nutauCC"] = new TH1F("hMultiplicity0_nutauCC", "Multiplicity nutauCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicity0["nuNC"] = new TH1F("hMultiplicity0_nuNC", "Multiplicity nuNC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicity0["nuES"] = new TH1F("hMultiplicity0_nuES", "Multiplicity nuES;Multiplicity;Counts", 50, -0.5, 59);
+  
+  hMultiplicityGm["nueCC"] = new TH1F("hMultiplicityGm_nueCC", "Multiplicity nueCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityGm["numuCC"] = new TH1F("hMultiplicityGm_numuCC", "Multiplicity numuCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityGm["nutauCC"] = new TH1F("hMultiplicityGm_nutauCC", "Multiplicity nutauCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityGm["nuNC"] = new TH1F("hMultiplicityGm_nuNC", "Multiplicity nuNC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityGm["nuES"] = new TH1F("hMultiplicityGm_nuES", "Multiplicity nuES;Multiplicity;Counts", 50, -0.5, 59);
+  
+  hMultiplicityN["nueCC"] = new TH1F("hMultiplicityN_nueCC", "Multiplicity nueCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityN["numuCC"] = new TH1F("hMultiplicityN_numuCC", "Multiplicity numuCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityN["nutauCC"] = new TH1F("hMultiplicityN_nutauCC", "Multiplicity nutauCC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityN["nuNC"] = new TH1F("hMultiplicityN_nuNC", "Multiplicity nuNC;Multiplicity;Counts", 50, -0.5, 59);
+  hMultiplicityN["nuES"] = new TH1F("hMultiplicityN_nuES", "Multiplicity nuES;Multiplicity;Counts", 50, -0.5, 59);
+  
+  hNeutrinoEnergy["nueCC"] = new TH1F("hNeutrinoEnergy_nueCC", "Neutrino Energy nueCC;Energy (GeV);Counts", 300, 0, 3000);
+  hNeutrinoEnergy["numuCC"] = new TH1F("hNeutrinoEnergy_numuCC", "Neutrino Energy numuCC;Energy (GeV);Counts", 300, 0, 3000);
+  hNeutrinoEnergy["nutauCC"] = new TH1F("hNeutrinoEnergy_nutauCC", "Neutrino Energy nutauCC;Energy (GeV);Counts", 300, 0, 3000);
+  hNeutrinoEnergy["nuNC"] = new TH1F("hNeutrinoEnergy_nuNC", "Neutrino Energy nuNC;Energy (GeV);Counts", 300, 0, 3000);
+  hNeutrinoEnergy["nuES"] = new TH1F("hNeutrinoEnergy_nuES", "Neutrino Energy nuES;Energy (GeV);Counts", 300, 0, 3000);
+  */
+  
+  TDatabasePDG* pdgDB = TDatabasePDG::Instance();
+  AddCustomNucleusParticles();
+  
+  // Loop over each file and extract information
+  for (const std::string& file_path : file_paths)
+    {
+      std::cout << "Processing file: " << file_path << std::endl;
+      
+      // Extract the base name from the file path
+      std::string base_name = std::filesystem::path(file_path).stem().string();
+      std::cout << "basename " << base_name << std::endl;
+      
+      // Split the base_name using '_' as a delimiter
+      std::istringstream ss(base_name);
+      std::string token;
+      std::vector<std::string> parts;
+      while (std::getline(ss, token, '_'))
+        {
+	  parts.push_back(token);
+        }
+      
+      if (parts.size() < 4)
+        {
+	  std::cerr << "Error: Invalid filename format, unable to parse: " << base_name << std::endl;
+	  continue; // Skip this file if the format is incorrect
+        }
+      
+      try {
+	// Parse the event number, run number, and mask
+	std::string event_number_str = parts[2];
+	int ievent = std::stoi(event_number_str);
+	std::string run_number_str = parts[1];
+	int irun = std::stoi(run_number_str);
+	std::string mask_str = parts[3];
+	
+	std::cout << "Event Number: " << ievent << ", Run Number: " << irun << ", Mask: " << mask_str << std::endl;
+	int imask = 0;
+	if (mask_str == "nueCC") imask = 1;
+	else if (mask_str == "numuCC") imask = 2;
+	else if (mask_str == "nutauCC") imask = 3;
+	else if (mask_str == "nuNC") imask = 4;
+	else if (mask_str == "nuES") imask = 5;
+	
+	fTcalEvent = new TcalEvent();
+	POevent = new TPOEvent();
+	fTcalEvent->Load_event("input/", irun, ievent, imask, POevent);
+	
+	// Initialize counters for each event
+	int chargedMultiplicity = 0;
+	int neutralMultiplicity = 0;
+	int totalMultiplicity = 0;
+	int gammaMultiplicity =0;
+	int neutronMultiplicity =0;
+	
+	// Count the particles based on their properties
+	for (size_t i = 0; i < POevent->n_particles(); i++)
+	  {
+	    struct PO& aPO = POevent->POs[i];
+	    TParticlePDG* particle = pdgDB->GetParticle(aPO.m_pdg_id);
+	    int charge = particle ? particle->Charge() : 0;
+	    
+	    if (aPO.m_status == 1)  // Only consider final state particles
+	      {
+		totalMultiplicity++;
+		if (charge != 0) {
+		  chargedMultiplicity++;
+		} else {
+		  neutralMultiplicity++;
+		}
+		if(aPO.m_pdg_id==22)
+		  gammaMultiplicity++;
+		if(aPO.m_pdg_id==2112)
+		  neutronMultiplicity++;
+	      }
+	  }
+	
+	// Fill histograms based on mask type
+	if (hMultiplicity.find(mask_str) != hMultiplicity.end()) {
+	  hMultiplicity[mask_str]->Fill(totalMultiplicity);
+	  hMultiplicityC[mask_str]->Fill(chargedMultiplicity);
+	  hMultiplicity0[mask_str]->Fill(neutralMultiplicity);
+	  hMultiplicityGm[mask_str]->Fill(gammaMultiplicity);
+	  hMultiplicityN[mask_str]->Fill(neutronMultiplicity);
+	  hNeutrinoEnergy[mask_str]->Fill(POevent->in_neutrino.m_energy);
+	}
+	
+      } catch (const std::invalid_argument& e) {
+	std::cerr << "Error: Invalid number format in filename: " << base_name << " - " << e.what() << std::endl;
+      } catch (const std::out_of_range& e) {
+	std::cerr << "Error: Number out of range in filename: " << base_name << " - " << e.what() << std::endl;
+      }
+    }
+  
+  // Calculate the maximum bin content separately for each mask type
+  for (const auto& mask : masks) {
+    double maxBinContent = 0.0;
+    for (const auto& hist : {hMultiplicity[mask], hMultiplicityC[mask], hMultiplicity0[mask], hMultiplicityGm[mask], hMultiplicityN[mask]}) {
+      if (hist->GetMaximum() > maxBinContent) {
+	maxBinContent = hist->GetMaximum();
+      }
+    }
+    // Set the maximum y-axis range for all histograms of the current mask type
+    double yAxisMax = maxBinContent * 1.1; // Set slightly above the max for better visualization
+    for (const auto& hist : {hMultiplicity[mask], hMultiplicityC[mask], hMultiplicity0[mask], hMultiplicityGm[mask], hMultiplicityN[mask]}) {
+      hist->SetMaximum(yAxisMax);
+      hist->SetStats(0);
+    }
+  }
+  
+  // Calculate the maximum bin content for Neutrino Energy histograms
+  double maxBinContentNeutrinoEnergy = 0.0;
+  for (const auto& mask : masks) {
+    if (hNeutrinoEnergy[mask]->GetMaximum() > maxBinContentNeutrinoEnergy) {
+      maxBinContentNeutrinoEnergy = hNeutrinoEnergy[mask]->GetMaximum();
+    }
+  }
+  
+  // Set the maximum y-axis range for Neutrino Energy histograms
+  double yAxisMaxNeutrinoEnergy = maxBinContentNeutrinoEnergy * 1.1; // Set slightly above the max for better visualization
+  for (const auto& mask : masks) {
+    hNeutrinoEnergy[mask]->SetMaximum(yAxisMaxNeutrinoEnergy);
+    hNeutrinoEnergy[mask]->SetStats(0);
+  } 
+  // Draw histograms for each mask type
+  SetMyStyle();
+  TCanvas *myCan = CreateCanvas("AllEvents", 1);
+  gPad->Update();
+  myCan->Divide(3, 2);  // 3 columns, 2 rows
+  
+  // Draw Multiplicity Histograms
+  int pad = 1;
+  for (const auto& mask : {"nueCC", "numuCC", "nutauCC", "nuNC", "nuES"}) {
+    myCan->cd(pad++);
+    hMultiplicity[mask]->SetLineColor(kBlack);
+    hMultiplicityC[mask]->SetLineColor(kBlue);
+    hMultiplicity0[mask]->SetLineColor(kRed);
+    hMultiplicityN[mask]->SetLineColor(kGreen);
+    hMultiplicityGm[mask]->SetLineColor(kOrange);
+    
+    hMultiplicity[mask]->Draw("hist");
+    hMultiplicityC[mask]->Draw("hist same");
+    hMultiplicityGm[mask]->Draw("hist same");
+    hMultiplicityN[mask]->Draw("hist same");
+    hMultiplicity0[mask]->Draw("hist same");
+
+    TLegend *legend = new TLegend(0.65, 0.65, 0.84, 0.84);
+    legend->AddEntry(hMultiplicity[mask], "Total", "l");
+    legend->AddEntry(hMultiplicityC[mask], "Charged", "l");
+    legend->AddEntry(hMultiplicity0[mask], "Neutral", "l");
+    legend->AddEntry(hMultiplicityGm[mask], "Gamma", "l");
+    legend->AddEntry(hMultiplicityN[mask], "Neutron", "l");
+    legend->SetBorderSize(0);
+    legend->SetFillColor(0);
+    legend->Draw();
+  }
+  
+  // Draw Neutrino Energy Histograms on a single canvas
+  myCan->cd(pad++);
+  int colorIndex = 2; // Starting color index
+  for (const auto& mask : masks) {
+    hNeutrinoEnergy[mask]->SetLineColor(colorIndex++);
+    hNeutrinoEnergy[mask]->SetLineWidth(2);
+    hNeutrinoEnergy[mask]->Draw(colorIndex == 3 ? "HIST" : "HIST SAME");
+  }
+
+  // Add a legend for Neutrino Energy histograms
+  TLegend *legendEnergy = new TLegend(0.65, 0.65, 0.84, 0.84);
+  legendEnergy->AddEntry(hNeutrinoEnergy["nueCC"], "nueCC", "l");
+  legendEnergy->AddEntry(hNeutrinoEnergy["numuCC"], "numuCC", "l");
+  legendEnergy->AddEntry(hNeutrinoEnergy["nutauCC"], "nutauCC", "l");
+  legendEnergy->AddEntry(hNeutrinoEnergy["nuNC"], "nuNC", "l");
+  legendEnergy->AddEntry(hNeutrinoEnergy["nuES"], "nuES", "l");
+  legendEnergy->SetBorderSize(0);
+  legendEnergy->SetFillColor(0);
+  legendEnergy->Draw();
+  
+  gPad->Update();
+  myCan->Update();
+}
+ 
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::DrawEvent(int irun, int ievent, int imask)
+  {
+
+    if (!gEve) {
+      std::cerr << "TEveManager is not initialized!" << std::endl;
+      return;
+    }
+
+    gEve->GetViewers()->DeleteAnnotations();
+    if(fHitElements)
+      {
+     	fHitElements->DestroyElements();
+	fPrimaryElements->DestroyElements();
+	fSecondaryShowerElements->DestroyElements();
+	fSecondaryHadShowerElements->DestroyElements();
+	fPixelHitElements->DestroyElements();
+      }    
+    TEveEventManager* currEvent = gEve->GetCurrentEvent();
+    if( currEvent ) currEvent->DestroyElements();
+    TEveElement* top = gEve->GetCurrentEvent();
+    LoadEvent(irun, ievent, imask);
+    
+    double wdx, wdy, wdz;
+    if (TGeoBBox *box = dynamic_cast<TGeoBBox*>(gGeoManager->GetTopVolume()->GetShape())){
+	wdx = box->GetDX();
+	wdy = box->GetDY();
+	wdz = box->GetDZ()/2.0;
+	printf("Top volume dimensions: DX = %f, DY = %f, DZ = %f\n", wdx, wdy, wdz);
+      } else {
+	std::cerr << "Failed to get top volume dimensions." << std::endl;
+	exit(1);
+      }
+    TGeoShape *bigbox = new TGeoBBox("bigbox", wdx, wdy, wdz);
+    TGeoMedium *air = gGeoManager->GetMedium("AIR");
+    primary = new TGeoVolume("primary", bigbox, air);
+    secondary_em = new TGeoVolume("secondary_em", bigbox, air);
+    secondary_had = new TGeoVolume("secondary_had", bigbox, air);
+    si_tracker = new TGeoVolume("si_tracker", bigbox, air);
+    
+    TGeoShape *box = new TGeoBBox("box", 0.5/2.0,0.5/2.0,0.5/2.0);
+    TGeoShape *trackerhitbox = new TGeoBBox("box", 0.1/2.0,0.1/2.0,0.1/2.0);
+
+    TGeoMaterial *matAluminum = new TGeoMaterial("Aluminum", 26.98, 13, 2.7);
+    TGeoMedium *aluminum = new TGeoMedium("Aluminum", 2, matAluminum);
+    
+    std::cout << " using copied digitized tracks " << fTcalEvent->getfTracks().size() << std::endl;
+
+
+    TEveElementList* hitList = new TEveElementList("Hits");
+    TEveElementList* zoomhitList = new TEveElementList("ZoomHits");
+    TEveElementList* primaryList = new TEveElementList("PrimaryHits");
+    TEveElementList* secondaryShowerList = new TEveElementList("SecondaryShowerHits");
+    TEveElementList* secondaryHadShowerList = new TEveElementList("SecondaryHadShowerHits");
+    TEveElementList* pixelhitList = new TEveElementList("PixelHits");
+
+    /////////////////      
+    double zoomRadius = 100.0;
+    /////////////////
+
+    for (const auto& track : fTcalEvent->getfTracks())
+      {
+	size_t nhits = track->fhitIDs.size();
+	for ( size_t i = 0; i < nhits; i++)
+	  {
+	    long hittype = fTcalEvent->getChannelTypefromID(track->fhitIDs[i]);
+	    
+	    // apply energy cut on scintillator voxel
+	    if(hittype == 0 && track->fEnergyDeposits[i] < 0.5)continue;
+           // apply cut on pixel hit
+            if(hittype == 1 && track->fEnergyDeposits[i] < 1e-3)continue;
+	    
+	    ROOT::Math::XYZVector position = fTcalEvent->getChannelXYZfromID(track->fhitIDs[i]);
+
+	    // Create a translation matrix for the hit position
+	    TGeoTranslation *trans = new TGeoTranslation(position.X() / 10.0, position.Y() / 10.0, position.Z() / 10.0);
+
+	    TGeoVolume* hitVolume = nullptr;
+	    TGeoVolume *hitVolumeTracker = nullptr;
+	    if(hittype == 0)
+	      {
+		hitVolume = new TGeoVolume("HitVolume", box, air);
+		hitVolume->SetLineColor(kRed); 
+		if(fabs(track->fPDG) == 11)
+		  {
+		    hitVolume->SetLineColor(kBlue); // electromagnetic is blue
+		  }
+		else if(fabs(track->fPDG) == 13)
+		  {
+		    hitVolume->SetLineColor(kGreen); // muons
+		  }
+		// get primary tracks
+		if(track->fparentID == 0)
+		  {
+		    primary->AddNode(hitVolume, i, trans);
+		  }
+		else
+		  {
+		    if(fabs(track->fPDG) == 11)
+		      {
+			secondary_em->AddNode(hitVolume, i, trans);
+		      }
+		    else
+		      {
+			secondary_had->AddNode(hitVolume, i, trans);
+		      }
+		  }
+	      }
+	    else if (hittype == 1)
+	      {
+		hitVolumeTracker = new TGeoVolume("TrackerHitVolume", trackerhitbox, air);
+		hitVolumeTracker->SetLineColor(kMagenta); 
+		si_tracker->AddNode(hitVolumeTracker, i, trans);
+	      }
+	    else
+	      {
+		std::cout << " Unknown type of hit " << std::endl;
+	      }
+            if (hitVolume)
+	      {
+                TEveGeoShape* eveShape = new TEveGeoShape(hitVolume->GetName());
+                eveShape->SetShape(hitVolume->GetShape());
+                eveShape->SetMainColor(hitVolume->GetLineColor());
+                eveShape->SetTransMatrix(*trans);
+                hitList->AddElement(eveShape);
+	      }
+            if (hitVolumeTracker)
+	      {
+                TEveGeoShape* eveShapeP = new TEveGeoShape(hitVolumeTracker->GetName());
+                eveShapeP->SetShape(hitVolumeTracker->GetShape());
+                eveShapeP->SetMainColor(hitVolumeTracker->GetLineColor());
+                eveShapeP->SetTransMatrix(*trans);
+                pixelhitList->AddElement(eveShapeP);
+	      }
+	  }
+      }
+    if (primary) {
+      std::cout << "...... " << primary->GetNdaughters() << std::endl;
+      for (int i = 0; i < primary->GetNdaughters(); ++i) {
+	TGeoNode* node = primary->GetNode(i);
+	if (!node) continue;  
+	TGeoVolume* vol = node->GetVolume();
+	TGeoTranslation* trans = dynamic_cast<TGeoTranslation*>(node->GetMatrix());
+	if (vol && trans) {
+	  TEveGeoShape* eveShape = new TEveGeoShape(vol->GetName());
+	  eveShape->SetShape(vol->GetShape());
+	  eveShape->SetMainColor(vol->GetLineColor());
+	  eveShape->SetTransMatrix(*trans);
+	  primaryList->AddElement(eveShape);
+	}
+      }
+      fPrimaryElements->AddElement(primaryList);
+    }
+    if (secondary_em) {
+      std::cout << "...... " << secondary_em->GetNdaughters() << std::endl;
+      for (int i = 0; i < secondary_em->GetNdaughters(); ++i) {
+	TGeoNode* node = secondary_em->GetNode(i);
+	if (!node) continue;  
+	TGeoVolume* vol = node->GetVolume();
+	TGeoTranslation* trans = dynamic_cast<TGeoTranslation*>(node->GetMatrix());
+	if (vol && trans) {
+	  TEveGeoShape* eveShape = new TEveGeoShape(vol->GetName());
+	  eveShape->SetShape(vol->GetShape());
+	  eveShape->SetMainColor(vol->GetLineColor());
+	  eveShape->SetTransMatrix(*trans);
+	  secondaryShowerList->AddElement(eveShape);
+	}
+      }
+      fSecondaryShowerElements->AddElement(secondaryShowerList);
+    }
+    if (secondary_had) {
+      std::cout << "...... " << secondary_had->GetNdaughters() << std::endl;
+      for (int i = 0; i < secondary_had->GetNdaughters(); ++i) {
+	TGeoNode* node = secondary_had->GetNode(i);
+	if (!node) continue;  
+	TGeoVolume* vol = node->GetVolume();
+	TGeoTranslation* trans = dynamic_cast<TGeoTranslation*>(node->GetMatrix());
+	if (vol && trans) {
+	  TEveGeoShape* eveShape = new TEveGeoShape(vol->GetName());
+	  eveShape->SetShape(vol->GetShape());
+	  eveShape->SetMainColor(vol->GetLineColor());
+	  eveShape->SetTransMatrix(*trans);
+	  secondaryHadShowerList->AddElement(eveShape);
+	}
+      }
+      fSecondaryHadShowerElements->AddElement(secondaryHadShowerList);
+    }
+
+    if (si_tracker) {
+      std::cout << "...xx... " << si_tracker->GetNdaughters() << std::endl;
+      for (int i = 0; i < si_tracker->GetNdaughters(); ++i) {
+	TGeoNode* node = si_tracker->GetNode(i);
+	if (!node) continue;
+	//std::cout<< "here i am!! " << std::endl;
+	TGeoVolume* vol = node->GetVolume();
+	TGeoTranslation* trans = dynamic_cast<TGeoTranslation*>(node->GetMatrix());
+	if (vol && trans) {
+	  TEveGeoShape* eveShape = new TEveGeoShape(vol->GetName());
+	  eveShape->SetShape(vol->GetShape());
+	  eveShape->SetMainColor(vol->GetLineColor());
+	  eveShape->SetTransMatrix(*trans);
+	  pixelhitList->AddElement(eveShape);
+	}
+      }
+      fPixelHitElements->AddElement(pixelhitList);
+    }
+    fHitElements->AddElement(hitList);
+    //fZoomHitElements->AddElement(zoomhitList);
+    gEve->AddGlobalElement(fHitElements);
+    gEve->FullRedraw3D(kTRUE);
+  }
+  //////////////////////////////////////////////////////////
+
+
+
+  //////////////////////////////////////////////////////////
+  void FaserCalDisplay::CountHitsInCube()
+  {
+    std::map<std::tuple<int, int, int>, int> scintillatorHitCounts; // To count the hits on scintillator cubes
+    std::map<std::tuple<int, int, int>, int> electronShowerHitCounts; // To count the hits on scintillator cubes for electron showers
+    std::map<std::tuple<int, int, int>, int> hadronShowerHitCounts; // To count the hits on scintillator cubes for hadron showers
+    double wdx, wdy, wdz;
+    if (TGeoBBox *box = dynamic_cast<TGeoBBox*>(gGeoManager->GetTopVolume()->GetShape())){
+	wdx = box->GetDX();
+	wdy = box->GetDY();
+	wdz = box->GetDZ()/2.0;
+      } else {
+	std::cerr << "Failed to get top volume dimensions." << std::endl;
+	exit(1);
+      }
+    for (const auto& track : fTcalEvent->getfTracks()) {
+        size_t nhits = track->fhitIDs.size();
+        for (size_t i = 0; i < nhits; i++) {
+            long hittype = fTcalEvent->getChannelTypefromID(track->fhitIDs[i]);
+            // Apply energy cut on scintillator voxel
+            if (hittype == 0 && track->fEnergyDeposits[i] < 0.5) continue;
+            ROOT::Math::XYZVector position = fTcalEvent->getChannelXYZfromID(track->fhitIDs[i]);
+            int x = static_cast<int>(position.X());
+            int y = static_cast<int>(position.Y());
+            int z = static_cast<int>(position.Z());
+	    if (hittype == 0) {
+	      
+	      // Increment the hit count for the scintillator cube
+	      scintillatorHitCounts[std::make_tuple(x, y, z)]++;
+	      if (fabs(track->fPDG) == 11) {
+		electronShowerHitCounts[std::make_tuple(x, y, z)]++;
+	      }else if (fabs(track->fPDG) != 11 && fabs(track->fPDG) != 13) {
+		hadronShowerHitCounts[std::make_tuple(x, y, z)]++;
+	      }
+	    }
+	}
+    }
+    SetMyStyle();
+    TCanvas *myCan = CreateCanvas("HitsInCubes",1);
+    gPad->Update();
+    myCan->Divide(1,2);
+    if (gROOT->FindObject("hScintillatorHits")) delete gROOT->FindObject("hScintillatorHits");
+    if (gROOT->FindObject("hElectronShowerHits")) delete gROOT->FindObject("hElectronShowerHits");
+    if (gROOT->FindObject("hHadronShowerHits")) delete gROOT->FindObject("hHadronShowerHits");
+    if (gROOT->FindObject("hScintillatorHitsVsZ")) delete gROOT->FindObject("hScintillatorHitsVsZ");
+
+    TH1F* hScintillatorHits = new TH1F("hScintillatorHits", " Hit Counts in Cubes;Hit Counts;Entries", 20, -0.5, 19.5);
+    TH1F* hElectronShowerHits = new TH1F("hElectronShowerHits", "Electron Shower Hit Counts in Cubes;Hit Counts;Entries", 20, -0.5, 19.5);
+    TH1F* hHadronShowerHits = new TH1F("hHadronShowerHits", "Hadron Shower Hit Counts in Cubes;Hit Counts;Entries", 20, -0.5, 19.5);
+    TH2F* hScintillatorHitsVsZ = new TH2F("hScintillatorHitsVsZ", "Hit Counts vs Z Position;Z Position;Number of Hits", 2*wdz, -wdz, wdz, 20, -0.5, 19.5);
+    // hit counts on scintillator cubes
+    for (const auto& item : scintillatorHitCounts) {
+      int x, y, z;
+      std::tie(x, y, z) = item.first;
+      int count = item.second;
+      if(fVerbose)
+	std::cout << "Scintillator cube at (" << x << ", " << y << ", " << z << ") has " << count << " hits." << std::endl;
+      hScintillatorHits->Fill(count);
+      hScintillatorHitsVsZ->Fill(z, count);
+    }
+    for (const auto& item : electronShowerHitCounts) {
+      int count = item.second;
+      hElectronShowerHits->Fill(count);
+    }
+
+    for (const auto& item : hadronShowerHitCounts) {
+      int count = item.second;
+      hHadronShowerHits->Fill(count);
+    }
+
+    myCan->cd(1);
+    hScintillatorHits->Draw();
+    hScintillatorHits->SetLineWidth(2);
+    hElectronShowerHits->SetLineColor(kBlue);
+    hElectronShowerHits->SetLineWidth(2);
+    hElectronShowerHits->Draw("same");
+    hHadronShowerHits->SetLineColor(kRed);
+    hHadronShowerHits->SetLineWidth(2);
+    hHadronShowerHits->Draw("same");
+    TLegend *myl = new TLegend(0.6,0.5,0.8,0.7);
+    myl->AddEntry(hScintillatorHits,"All","L");
+    myl->AddEntry(hElectronShowerHits,"EM shower","L");
+    myl->AddEntry(hHadronShowerHits,"Had shower","L");
+    myl->SetBorderSize(0);
+    myl->SetFillColor(0);
+    myl->Draw("same");   
+    gPad->SetLogy();
+    gPad->Update();
+    myCan->cd(2);
+    hScintillatorHitsVsZ->SetStats(0);
+    hScintillatorHitsVsZ->Draw("COLZ");
+    gPad->Update();
+    myCan->Update();
+  }
+  //////////////////////////////////////////////////////////
+  /*
+  void FaserCalDisplay::ZoomEvent(int ievent)
+  {
+    if (!gEve) {
+      std::cerr << "TEveManager is not initialized!" << std::endl;
+      return;
+    }
+    
+    TEveEventManager* currEvent = gEve->GetCurrentEvent();
+    if (currEvent) currEvent->DestroyElements();
+    TEveElement* top = gEve->GetCurrentEvent();
+    LoadEvent(ievent);
+
+    double wdx, wdy, wdz;
+    if (TGeoBBox *box = dynamic_cast<TGeoBBox*>(gGeoManager->GetTopVolume()->GetShape())) {
+      wdx = box->GetDX();
+      wdy = box->GetDY();
+      wdz = box->GetDZ() / 2.0;
+      printf("Top volume dimensions: DX = %f, DY = %f, DZ = %f\n", wdx, wdy, wdz);
+    } else {
+      std::cerr << "Failed to get top volume dimensions." << std::endl;
+      exit(1);
+    }
+    TGeoShape *bigbox = new TGeoBBox("bigbox", wdx, wdy, wdz);
+    TGeoMedium *air = gGeoManager->GetMedium("AIR");
+    primary = new TGeoVolume("primary", bigbox, air);
+    secondary_em = new TGeoVolume("secondary_em", bigbox, air);
+    secondary_had = new TGeoVolume("secondary_had", bigbox, air);
+    si_tracker = new TGeoVolume("si_tracker", bigbox, air);
+
+    TGeoShape *box = new TGeoBBox("box", 0.5 / 2.0, 0.5 / 2.0, 0.5 / 2.0);
+    TGeoShape *trackerhitbox = new TGeoBBox("box", 0.1 / 2.0, 0.1 / 2.0, 0.1 / 2.0);
+    
+    TGeoMaterial *matAluminum = new TGeoMaterial("Aluminum", 26.98, 13, 2.7);
+    TGeoMedium *aluminum = new TGeoMedium("Aluminum", 2, matAluminum);
+    
+    std::cout << "Using copied digitized tracks " << fTcalEvent->fTracks.size() << std::endl;
+    
+    TEveElementList* hitList = new TEveElementList("Hits");
+    TEveElementList* primaryList = new TEveElementList("PrimaryHits");
+    TEveElementList* secondaryShowerList = new TEveElementList("SecondaryShowerHits");
+    TEveElementList* secondaryHadShowerList = new TEveElementList("SecondaryHadShowerHits");
+    TEveElementList* pixelhitList = new TEveElementList("PixelHits");
+    
+    ROOT::Math::XYZVector primaryVertex(POevent->prim_vx[0], POevent->prim_vx[1], POevent->prim_vx[2]);
+    double layerThickness = fTcalEvent->geom_detector.fSandwichLength; // Length of one sandwich layer
+    
+    for (const auto& track : fTcalEvent->fTracks) {
+      size_t nhits = track->fhitIDs.size();
+      for (size_t i = 0; i < nhits; i++) {
+	long hittype = fTcalEvent->getChannelTypefromID(track->fhitIDs[i]);
+        
+	// apply energy cut on scintillator voxel
+	if (hittype == 0 && track->fEnergyDeposits[i] < 0.5) continue;
+	
+	ROOT::Math::XYZVector position = fTcalEvent->getChannelXYZfromID(track->fhitIDs[i]);
+	
+	// Filter hits based on the number of layers
+	if (fZoom) {
+	  double distance = abs(position.Z() - primaryVertex.Z());
+	  
+	  if (distance > fnumLayers*layerThickness) {
+	    continue;
+	  }
+	  // Create a translation matrix for the hit position
+	  TGeoTranslation *trans = new TGeoTranslation(position.X() / 10.0, position.Y() / 10.0, position.Z() / 10.0);
+	  
+	  TGeoVolume* hitVolume = nullptr;
+	  TGeoVolume *hitVolumeTracker = nullptr;
+	  if (hittype == 0) {
+	    hitVolume = new TGeoVolume("HitVolume", box, air);
+	    hitVolume->SetLineColor(kRed);
+	    if (fabs(track->fPDG) == 11) {
+	      hitVolume->SetLineColor(kBlue); // electromagnetic is blue
+	    } else if (fabs(track->fPDG) == 13) {
+	      hitVolume->SetLineColor(kGreen); // muons
+	    }
+	    // get primary tracks
+	    if (track->fparentID == 0) {
+	      primary->AddNode(hitVolume, i, trans);
+	    } else {
+	      if (fabs(track->fPDG) == 11) {
+		secondary_em->AddNode(hitVolume, i, trans);
+	      } else {
+		secondary_had->AddNode(hitVolume, i, trans);
+	      }
+	    }
+	  } else if (hittype == 1) {
+	    hitVolumeTracker = new TGeoVolume("TrackerHitVolume", trackerhitbox, air);
+	    hitVolumeTracker->SetLineColor(kBlack);
+	    si_tracker->AddNode(hitVolumeTracker, i, trans);
+	  } else {
+	    std::cout << "Unknown type of hit" << std::endl;
+	  }
+	  if (hitVolume) {
+	    TEveGeoShape* eveShape = new TEveGeoShape(hitVolume->GetName());
+	    eveShape->SetShape(hitVolume->GetShape());
+	    eveShape->SetMainColor(hitVolume->GetLineColor());
+	    eveShape->SetTransMatrix(*trans);
+	    hitList->AddElement(eveShape);
+	  }
+	}
+      }
+    }//
+    
+    
+    if (primary) {
+      std::cout << "...... " << primary->GetNdaughters() << std::endl;
+      for (int i = 0; i < primary->GetNdaughters(); ++i) {
+	TGeoNode* node = primary->GetNode(i);
+	if (!node) continue;
+	TGeoVolume* vol = node->GetVolume();
+	TGeoTranslation* trans = dynamic_cast<TGeoTranslation*>(node->GetMatrix());
+	if (vol && trans) {
+	  TEveGeoShape* eveShape = new TEveGeoShape(vol->GetName());
+	  eveShape->SetShape(vol->GetShape());
+	  eveShape->SetMainColor(vol->GetLineColor());
+	  eveShape->SetTransMatrix(*trans);
+	  primaryList->AddElement(eveShape);
+	}
+      }
+      fPrimaryElements->AddElement(primaryList);
+    }
+    if (secondary_em) {
+      std::cout << "...... " << secondary_em->GetNdaughters() << std::endl;
+      for (int i = 0; i < secondary_em->GetNdaughters(); ++i) {
+	TGeoNode* node = secondary_em->GetNode(i);
+	if (!node) continue;
+	TGeoVolume* vol = node->GetVolume();
+	TGeoTranslation* trans = dynamic_cast<TGeoTranslation*>(node->GetMatrix());
+	if (vol && trans) {
+	  TEveGeoShape* eveShape = new TEveGeoShape(vol->GetName());
+	  eveShape->SetShape(vol->GetShape());
+	  eveShape->SetMainColor(vol->GetLineColor());
+	  eveShape->SetTransMatrix(*trans);
+	  secondaryShowerList->AddElement(eveShape);
+	}
+      }
+      fSecondaryShowerElements->AddElement(secondaryShowerList);
+    }
+    if (secondary_had) {
+      std::cout << "...... " << secondary_had->GetNdaughters() << std::endl;
+      for (int i = 0; i < secondary_had->GetNdaughters(); ++i) {
+	TGeoNode* node = secondary_had->GetNode(i);
+	if (!node) continue;
+	TGeoVolume* vol = node->GetVolume();
+	TGeoTranslation* trans = dynamic_cast<TGeoTranslation*>(node->GetMatrix());
+	if (vol && trans) {
+	  TEveGeoShape* eveShape = new TEveGeoShape(vol->GetName());
+	  eveShape->SetShape(vol->GetShape());
+	  eveShape->SetMainColor(vol->GetLineColor());
+	  eveShape->SetTransMatrix(*trans);
+	  secondaryHadShowerList->AddElement(eveShape);
+	}
+      }
+      fSecondaryHadShowerElements->AddElement(secondaryHadShowerList);
+    }
+    
+    if (si_tracker) {
+      std::cout << "...xx... " << si_tracker->GetNdaughters() << std::endl;
+      for (int i = 0; i < si_tracker->GetNdaughters(); ++i) {
+	TGeoNode* node = si_tracker->GetNode(i);
+	if (!node) continue;
+	TGeoVolume* vol = node->GetVolume();
+	TGeoTranslation* trans = dynamic_cast<TGeoTranslation*>(node->GetMatrix());
+	if (vol && trans) {
+	  TEveGeoShape* eveShape = new TEveGeoShape(vol->GetName());
+	  eveShape->SetShape(vol->GetShape());
+	  eveShape->SetMainColor(vol->GetLineColor());
+	  eveShape->SetTransMatrix(*trans);
+	  pixelhitList->AddElement(eveShape);
+	}
+      }
+      fPixelHitElements->AddElement(pixelhitList);
+    }
+    
+    fHitElements->AddElement(hitList);
+    gEve->AddGlobalElement(fHitElements);
+    gEve->FullRedraw3D(kTRUE);
+  }
+  
+  */
+
+  
+}  // namespace display

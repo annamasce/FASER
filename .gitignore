@@ -16,3 +16,5 @@ googletest-build/
 googletest-install/
 rave*/
 pythia*/
+*#
+*~
