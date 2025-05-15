@@ -95,6 +95,7 @@ public:
     /// @brief Return the x,y,z position of a 2D hit (one coordinate x, or y should always be ignored)
     void pshit2d_position(long ID, double &fix, double &fiy, double &fiz);
 
+  
     TH2D* xviewPS = nullptr;                          // 2Dview scintillator X-Z
     TH2D* yviewPS = nullptr;                          // 2Dview scintillator Y-Z
     std::vector<TH2D*> zviewPS;                                // 2Dview scintillator X-Z view for all planes
@@ -109,6 +110,18 @@ public:
     std::vector<TPSCluster> PSClustersY;                // 2Dview clusters YZ
     size_t n_psclustersX() { return PSClustersX.size(); };    // number of reconstructed cluster in XZ view
     size_t n_psclustersY() { return PSClustersY.size(); };    // number of reconstructed cluster in YZ view
+
+    /// Added to access hits information in clusters
+    const std::vector<TPSCluster>& GetPSClusters(int view) const {
+      return (view == 0) ? PSClustersX : PSClustersY;
+    }
+    std::vector<TPSCluster>& GetPSClusters(int view) {
+      return (view == 0) ? PSClustersX : PSClustersY;
+    }
+
+  std::vector<TPSCluster> PSClusters3D;
+  const std::vector<TPSCluster>* GetPSClusters3D() const { return &PSClusters3D; }
+  void Reconstruct3DClusters();
 
     struct PSVOXEL3D {
         long ID;

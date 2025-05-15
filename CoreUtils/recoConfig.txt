@@ -1,0 +1,4 @@
+clusters_threshold_2dhit = 2.0
+clusters_eps = 5.0
+clusters_minPts = 10
+
