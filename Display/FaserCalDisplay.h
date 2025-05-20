@@ -90,7 +90,7 @@
 #include "../CoreUtils/TcalEvent.hh" 
 #include "../CoreUtils/TPORecoEvent.hh"
 #include "../CoreUtils/TPOEvent.hh"
-#include "fastjet/ClusterSequence.hh"
+// #include "fastjet/ClusterSequence.hh"
 
 
 
@@ -105,8 +105,8 @@ namespace display
       // Declare a map to store the association between TGeoVolume and track information
       std::unordered_map<TGeoVolume*, DigitizedTrack*> volumeTrackMap;
 
-      const std::vector<fastjet::PseudoJet>& GetJets() const { return fJets; }
-      fastjet::PseudoJet computeMomentumFromVoxel(ROOT::Math::XYZVector position, double totalEnergy);
+    //   const std::vector<fastjet::PseudoJet>& GetJets() const { return fJets; }
+    //   fastjet::PseudoJet computeMomentumFromVoxel(ROOT::Math::XYZVector position, double totalEnergy);
 
 
       void EventDisplay();
@@ -139,7 +139,7 @@ namespace display
       void ShowPixelRecoTrack();
       void ShowShortLivedParticle();
       void JetReconstructions();
-      void ShowJetHits();
+    //   void ShowJetHits();
       Double_t fVisibleEnergy = 0.0;
       Double_t fTotalEnergy = 0.0;
       Double_t fRearECalEnergy = 0.0;
@@ -239,8 +239,8 @@ namespace display
       Bool_t fVisibleVol[10000] = { kFALSE };
       //std::map<TEveGeoShape*, TcalEvent->getfTracks()[0]> shapeTrackMap; // Auto-detect the type
       std::map<TEveGeoShape*, DigitizedTrack*> shapeTrackMap; 
-  //Fastjet
-  std::vector<fastjet::PseudoJet> fJets;
+//   //Fastjet
+//   std::vector<fastjet::PseudoJet> fJets;
       Bool_t ApplyIsolation = kFALSE;
       Bool_t ShowTruth = kFALSE;
       Bool_t ShowCRT = kFALSE;

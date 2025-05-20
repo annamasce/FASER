@@ -2935,11 +2935,11 @@ void TPORecoEvent::Reconstruct3DPS_2(int maxIter) {
                 long ilayer = z / nzlayer;
                 long iz = z % nzlayer;
                 long ID = x + y * 1000 + iz * 1000000 + ilayer * 1000000000;
-		// umut debug 
-		std::cout << "PSVoxelMapFilling "
-			  << ilayer << " "
-			  << ID << " " 
-			  << x << " " << y << " " << z << std::endl; 
+		// // umut debug 
+		// std::cout << "PSVoxelMapFilling "
+		// 	  << ilayer << " "
+		// 	  << ID << " " 
+		// 	  << x << " " << y << " " << z << std::endl; 
 
                 struct PSVOXEL3D v = {ID, ehit, true};
                 PSvoxelmap[ID] = v;

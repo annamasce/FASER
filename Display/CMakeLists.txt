@@ -16,40 +16,47 @@ include_directories(${ROOT_INCLUDE_DIRS})
 
 add_definitions(-Wno-deprecated-declarations)
 
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake") # (Find*.cmake)
 
-# Include PandoraPAF headers
-include_directories(/data/sw/products/PandoraPFA/install/include)
-##include_directories(/data/sw/products/PandoraPFA/install/include/Api)
-link_directories(/data/sw/products/PandoraPFA/install/lib)
-find_library(PANDORA_SDK_LIB PandoraSDK PATHS /data/sw/products/PandoraPFA/install/lib)
-find_library(PANDORA_MON_LIB PandoraMonitoring PATHS /data/sw/products/PandoraPFA/install/lib)
-if (NOT PANDORA_SDK_LIB)
-    message(FATAL_ERROR "PandoraSDK library not found!")
-endif()
+# Find libraries
+find_package(GenFit REQUIRED)
 
-if (NOT PANDORA_MON_LIB)
-    message(WARNING "PandoraMonitoring library not found! Proceeding without it.")
-endif()
+# # Include PandoraPAF headers
+# include_directories(/data/sw/products/PandoraPFA/install/include)
+# ##include_directories(/data/sw/products/PandoraPFA/install/include/Api)
+# link_directories(/data/sw/products/PandoraPFA/install/lib)
+# find_library(PANDORA_SDK_LIB PandoraSDK PATHS /data/sw/products/PandoraPFA/install/lib)
+# find_library(PANDORA_MON_LIB PandoraMonitoring PATHS /data/sw/products/PandoraPFA/install/lib)
+# if (NOT PANDORA_SDK_LIB)
+#     message(FATAL_ERROR "PandoraSDK library not found!")
+# endif()
 
-# Find FastJet
-set(FASTJET_DIR /data/sw/products/fastjet-install)
+# if (NOT PANDORA_MON_LIB)
+#     message(WARNING "PandoraMonitoring library not found! Proceeding without it.")
+# endif()
 
-find_path(FASTJET_INCLUDE_DIRS fastjet/ClusterSequence.hh PATHS ${FASTJET_DIR}/include)
-find_library(FASTJET_LIB fastjet PATHS ${FASTJET_DIR}/lib)
+# # Find FastJet
+# set(FASTJET_DIR /data/sw/products/fastjet-install)
 
-if (NOT FASTJET_INCLUDE_DIRS OR NOT FASTJET_LIB)
-    message(FATAL_ERROR "FastJet library not found! Install FastJet and set the correct paths.")
-endif()
+# find_path(FASTJET_INCLUDE_DIRS fastjet/ClusterSequence.hh PATHS ${FASTJET_DIR}/include)
+# find_library(FASTJET_LIB fastjet PATHS ${FASTJET_DIR}/lib)
 
-# Include FastJet headers
-include_directories(${FASTJET_INCLUDE_DIRS})
-link_directories(${FASTJET_DIR}/lib)
+# if (NOT FASTJET_INCLUDE_DIRS OR NOT FASTJET_LIB)
+#     message(FATAL_ERROR "FastJet library not found! Install FastJet and set the correct paths.")
+# endif()
+
+# # Include FastJet headers
+# include_directories(${FASTJET_INCLUDE_DIRS})
+# link_directories(${FASTJET_DIR}/lib)
 
 # Include GenFit directories
-set(GENFITINCDIR /data/sw/FASERCAL/FASER/GenFit-install/include)
-include_directories(${GENFITINCDIR})
-set(GENFITLIBDIR /data/sw/FASERCAL/FASER/GenFit-install/lib)
-link_directories(${GENFITLIBDIR})
+# set(GENFITINCDIR /data/sw/FASERCAL/FASER/GenFit-install/include)
+# include_directories(${GENFITINCDIR})
+# set(GENFITLIBDIR /data/sw/FASERCAL/FASER/GenFit-install/lib)
+# link_directories(${GENFITLIBDIR})
+
+include_directories(${GenFit_INCLUDE_DIRS})
+link_directories(${GenFit_LIBRARIES})
 
 # Define the source files
 set(SOURCES
@@ -80,28 +87,22 @@ add_library(FaserCalDisplay SHARED FaserCalDisplay.cxx G__FaserCalDisplay.cxx)
 add_executable(FaserCalDisplayApp ${SOURCES})
 
 # Include directories
-target_include_directories(FaserCalDisplay PRIVATE ${ROOT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} ../CoreUtils ${GENFITINCDIR})
+target_include_directories(FaserCalDisplay PRIVATE ${ROOT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} ${CoreUtils_INCLUDE_DIRS} ${GenFit_INCLUDE_DIRS})
+target_include_directories(FaserCalDisplayApp PRIVATE ${ROOT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} ../CoreUtils ${GenFit_INCLUDE_DIRS})
 
-target_include_directories(FaserCalDisplayApp PRIVATE ${ROOT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} ../CoreUtils ${GENFITINCDIR})
-
-# Link libraries
-find_library(GENFIT_LIB libgenfit2.so PATHS ${GENFITLIBDIR})
-if (NOT GENFIT_LIB)
-    message(FATAL_ERROR "GenFit library not found!")
-endif()
-
-#target_link_libraries(FaserCalDisplay ${ROOT_LIBRARIES} ${GENFIT_LIB})
-target_link_libraries(FaserCalDisplayApp FaserCalDisplay stdc++fs ${ROOT_LIBRARIES} ${GENFIT_LIB} ${PANDORA_SDK_LIB} ${PANDORA_MON_LIB} ${FASTJET_LIB})
+# target_link_libraries(FaserCalDisplay ${ROOT_LIBRARIES} ${GENFIT_LIB})
+# target_link_libraries(FaserCalDisplayApp FaserCalDisplay stdc++fs ${ROOT_LIBRARIES} ${GENFIT_LIB} ${PANDORA_SDK_LIB} ${PANDORA_MON_LIB} ${FASTJET_LIB})
+target_link_libraries(FaserCalDisplayApp PUBLIC FaserCalDisplay stdc++fs ${ROOT_LIBRARIES} ${GenFit_LIBRARIES})
 
 # Add RPATH for runtime library discovery
-set(CMAKE_INSTALL_RPATH "${ROOT_LIBRARY_DIR};${GENFITLIBDIR};$ENV{ROOTSYS}/lib")
-set(CMAKE_BUILD_RPATH "${ROOT_LIBRARY_DIR};${GENFITLIBDIR};$ENV{ROOTSYS}/lib")
+set(CMAKE_INSTALL_RPATH "${ROOT_LIBRARY_DIR};${GenFit_LIBRARIES};$ENV{ROOTSYS}/lib")
+set(CMAKE_BUILD_RPATH "${ROOT_LIBRARY_DIR};${GenFit_LIBRARIES};$ENV{ROOTSYS}/lib")
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-set(CMAKE_INSTALL_RPATH "${ROOT_LIBRARY_DIR};${GENFITLIBDIR};/data/sw/products/PandoraPFA/install/lib")
-set(CMAKE_BUILD_RPATH "${ROOT_LIBRARY_DIR};${GENFITLIBDIR};/data/sw/products/PandoraPFA/install/lib")
+set(CMAKE_INSTALL_RPATH "${ROOT_LIBRARY_DIR};${GenFit_LIBRARIES};/data/sw/products/PandoraPFA/install/lib")
+set(CMAKE_BUILD_RPATH "${ROOT_LIBRARY_DIR};${GenFit_LIBRARIES};/data/sw/products/PandoraPFA/install/lib")
 
 
 # Debug output
 message(STATUS "ROOT Library Directory: ${ROOT_LIBRARY_DIR}")
-message(STATUS "GenFit Library Directory: ${GENFITLIBDIR}")
-message(STATUS "GenFit Library: ${GENFIT_LIB}")
+# message(STATUS "GenFit Library Directory: ${GenFit_INCLUDE_DIRS}")
+message(STATUS "GenFit Library: ${GenFit_LIBRARIES}")

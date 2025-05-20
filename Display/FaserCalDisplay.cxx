@@ -2304,124 +2304,124 @@ void FaserCalDisplay::LoadAllEvents()
     gPad->Update();
     myCan->Update();
   }
-  //////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////
-  // Function to compute momentum from voxel position and total energy deposited
-  fastjet::PseudoJet FaserCalDisplay::computeMomentumFromVoxel(ROOT::Math::XYZVector position, double totalEnergy) 
-  {
-    double norm = sqrt(position.x() * position.x() + position.y() * position.y() + position.z() * position.z());
-    if (norm == 0) return fastjet::PseudoJet(0, 0, 0, 0); // Avoid division by zero
-    double px = totalEnergy * position.x() / norm;
-    double py = totalEnergy * position.y() / norm;
-    double pz = totalEnergy * position.z() / norm;
-    return fastjet::PseudoJet(px, py, pz, totalEnergy);
-  }
+  // //////////////////////////////////////////////////////////
+  // //////////////////////////////////////////////////////////
+  // // Function to compute momentum from voxel position and total energy deposited
+  // fastjet::PseudoJet FaserCalDisplay::computeMomentumFromVoxel(ROOT::Math::XYZVector position, double totalEnergy) 
+  // {
+  //   double norm = sqrt(position.x() * position.x() + position.y() * position.y() + position.z() * position.z());
+  //   if (norm == 0) return fastjet::PseudoJet(0, 0, 0, 0); // Avoid division by zero
+  //   double px = totalEnergy * position.x() / norm;
+  //   double py = totalEnergy * position.y() / norm;
+  //   double pz = totalEnergy * position.z() / norm;
+  //   return fastjet::PseudoJet(px, py, pz, totalEnergy);
+  // }
   
   
-  void FaserCalDisplay::JetReconstructions()
-  {  
-    std::map<std::tuple<int, int, int>, double> voxelEnergyDeposits; // Store total energy per voxel
+  // void FaserCalDisplay::JetReconstructions()
+  // {  
+  //   std::map<std::tuple<int, int, int>, double> voxelEnergyDeposits; // Store total energy per voxel
     
-    // Aggregate energy per voxel
-    for (const auto& track : fTcalEvent->getfTracks()) {
-      for (size_t i = 0; i < track->fhitIDs.size(); i++) {
-	long hittype = fTcalEvent->getChannelTypefromID(track->fhitIDs[i]);
+  //   // Aggregate energy per voxel
+  //   for (const auto& track : fTcalEvent->getfTracks()) {
+  //     for (size_t i = 0; i < track->fhitIDs.size(); i++) {
+	// long hittype = fTcalEvent->getChannelTypefromID(track->fhitIDs[i]);
         
-	if (hittype == 0) { // Only consider scintillator hits
-	  ROOT::Math::XYZVector position = fTcalEvent->getChannelXYZfromID(track->fhitIDs[i]);
-	  int x = static_cast<int>(position.X());
-	  int y = static_cast<int>(position.Y());
-	  int z = static_cast<int>(position.Z());
+	// if (hittype == 0) { // Only consider scintillator hits
+	//   ROOT::Math::XYZVector position = fTcalEvent->getChannelXYZfromID(track->fhitIDs[i]);
+	//   int x = static_cast<int>(position.X());
+	//   int y = static_cast<int>(position.Y());
+	//   int z = static_cast<int>(position.Z());
 	  
-	  double energyDeposit = track->fEnergyDeposits[i];
+	//   double energyDeposit = track->fEnergyDeposits[i];
 	  
-	  std::tuple<int, int, int> voxelKey = std::make_tuple(x, y, z);
-	  voxelEnergyDeposits[voxelKey] += energyDeposit; // Sum energy deposits in the same voxel
-	}
-      }
-    }
-    // Convert voxel energy deposits into momentum vectors
-    std::vector<fastjet::PseudoJet> input_particles;
-    for (const auto& voxel : voxelEnergyDeposits) {
-      int x, y, z;
-      std::tie(x, y, z) = voxel.first;
-      double totalEnergy = voxel.second;
+	//   std::tuple<int, int, int> voxelKey = std::make_tuple(x, y, z);
+	//   voxelEnergyDeposits[voxelKey] += energyDeposit; // Sum energy deposits in the same voxel
+	// }
+  //     }
+  //   }
+  //   // Convert voxel energy deposits into momentum vectors
+  //   std::vector<fastjet::PseudoJet> input_particles;
+  //   for (const auto& voxel : voxelEnergyDeposits) {
+  //     int x, y, z;
+  //     std::tie(x, y, z) = voxel.first;
+  //     double totalEnergy = voxel.second;
       
-      // Convert voxel (x, y, z) back to real space position
-      ROOT::Math::XYZVector position(x, y, z);
+  //     // Convert voxel (x, y, z) back to real space position
+  //     ROOT::Math::XYZVector position(x, y, z);
       
-      // Compute momentum using total voxel energy
-      fastjet::PseudoJet p = computeMomentumFromVoxel(position, totalEnergy);
-      input_particles.push_back(p);
-    }
-    // Jet clustering parameters
-    double R = 0.4;
-    double ptMin = 0.1;
-    fastjet::JetDefinition jet_def(fastjet::antikt_algorithm, R);
-    fastjet::ClusterSequence cs(input_particles, jet_def);
+  //     // Compute momentum using total voxel energy
+  //     fastjet::PseudoJet p = computeMomentumFromVoxel(position, totalEnergy);
+  //     input_particles.push_back(p);
+  //   }
+  //   // Jet clustering parameters
+  //   double R = 0.4;
+  //   double ptMin = 0.1;
+  //   fastjet::JetDefinition jet_def(fastjet::antikt_algorithm, R);
+  //   fastjet::ClusterSequence cs(input_particles, jet_def);
     
-    // Store the jets above ptMin threshold
-    fJets = cs.inclusive_jets(ptMin);
+  //   // Store the jets above ptMin threshold
+  //   fJets = cs.inclusive_jets(ptMin);
     
-    // Debug output: Print jet properties
-    for (const auto& jet : fJets) {
-      std::cout << "Jet pt: " << jet.pt() 
-		<< ", eta: " << jet.eta() 
-		<< ", phi: " << jet.phi() 
-		<< ", mass: " << jet.m() 
-		<< ", n_constituents: " << jet.constituents().size()
-		<< std::endl;
-    }
-    // Save jet data for further analysis
-    std::ofstream jetFile("jets_with_voxel_energy.txt");
-    if (!jetFile) {
-      std::cerr << "Error opening file!" << std::endl;
-      return;
-    }
+  //   // Debug output: Print jet properties
+  //   for (const auto& jet : fJets) {
+  //     std::cout << "Jet pt: " << jet.pt() 
+	// 	<< ", eta: " << jet.eta() 
+	// 	<< ", phi: " << jet.phi() 
+	// 	<< ", mass: " << jet.m() 
+	// 	<< ", n_constituents: " << jet.constituents().size()
+	// 	<< std::endl;
+  //   }
+  //   // Save jet data for further analysis
+  //   std::ofstream jetFile("jets_with_voxel_energy.txt");
+  //   if (!jetFile) {
+  //     std::cerr << "Error opening file!" << std::endl;
+  //     return;
+  //   }
     
-    std::map<int, TPolyMarker3D*> jetMarkers;
-    std::vector<int> colors = {2, 4, 6, 8, 9, 11, 28, 46, 49}; // ROOT colors
-    int colorIndex = 0;
+  //   std::map<int, TPolyMarker3D*> jetMarkers;
+  //   std::vector<int> colors = {2, 4, 6, 8, 9, 11, 28, 46, 49}; // ROOT colors
+  //   int colorIndex = 0;
     
-    int jet_id = 0;
-    for (const auto& jet : fJets) {
-      jetFile << "JET " << jet_id << " " << jet.pt() << " " << jet.eta() << " " << jet.phi() << "\n";
+  //   int jet_id = 0;
+  //   for (const auto& jet : fJets) {
+  //     jetFile << "JET " << jet_id << " " << jet.pt() << " " << jet.eta() << " " << jet.phi() << "\n";
       
-      jetMarkers[jet_id] = new TPolyMarker3D();
-      jetMarkers[jet_id]->SetMarkerStyle(20);
-      jetMarkers[jet_id]->SetMarkerColor(colors[colorIndex % colors.size()]);
-      colorIndex++;
+  //     jetMarkers[jet_id] = new TPolyMarker3D();
+  //     jetMarkers[jet_id]->SetMarkerStyle(20);
+  //     jetMarkers[jet_id]->SetMarkerColor(colors[colorIndex % colors.size()]);
+  //     colorIndex++;
       
-      for (const auto& constituent : jet.constituents()) {
-        jetFile << jet_id << " " << constituent.pt() << " " << constituent.eta() << " " << constituent.phi() << "\n";
-        jetMarkers[jet_id]->SetNextPoint(constituent.eta(), constituent.phi(), constituent.pt());
-      }
-      jetFile << "END\n";
-      jet_id++;
-    }
-    jetFile.close();
+  //     for (const auto& constituent : jet.constituents()) {
+  //       jetFile << jet_id << " " << constituent.pt() << " " << constituent.eta() << " " << constituent.phi() << "\n";
+  //       jetMarkers[jet_id]->SetNextPoint(constituent.eta(), constituent.phi(), constituent.pt());
+  //     }
+  //     jetFile << "END\n";
+  //     jet_id++;
+  //   }
+  //   jetFile.close();
     
-    // Create a 3D canvas for visualization
-    TCanvas* c1 = new TCanvas("c1", "3D Jet Visualization", 800, 600);
-    c1->cd();
+  //   // Create a 3D canvas for visualization
+  //   TCanvas* c1 = new TCanvas("c1", "3D Jet Visualization", 800, 600);
+  //   c1->cd();
     
-    // Define 3D histogram frame
-    TH3F* frame = new TH3F("frame", "Jets in (eta, phi, pT);#eta;#phi;pT",
-			   10, -5, 5, 10, -3.14, 3.14, 10, 0, 15000);
-    frame->Draw();
+  //   // Define 3D histogram frame
+  //   TH3F* frame = new TH3F("frame", "Jets in (eta, phi, pT);#eta;#phi;pT",
+	// 		   10, -5, 5, 10, -3.14, 3.14, 10, 0, 15000);
+  //   frame->Draw();
     
-    // Draw jet constituents
-    TLegend* legend = new TLegend(0.8, 0.7, 0.9, 0.9);
-    for (const auto& [jet, marker] : jetMarkers) {
-      marker->Draw("same");
-      legend->AddEntry(marker, Form("Jet %d", jet), "p");
-    }
+  //   // Draw jet constituents
+  //   TLegend* legend = new TLegend(0.8, 0.7, 0.9, 0.9);
+  //   for (const auto& [jet, marker] : jetMarkers) {
+  //     marker->Draw("same");
+  //     legend->AddEntry(marker, Form("Jet %d", jet), "p");
+  //   }
     
-    legend->Draw();
-    c1->Update();
+  //   legend->Draw();
+  //   c1->Update();
     
-    ShowJetHits();
-  }
+  //   ShowJetHits();
+  // }
   
     //////////////////////////////////////////////////////////
     /*
@@ -2517,60 +2517,60 @@ void FaserCalDisplay::LoadAllEvents()
  
     }*/
 
-    void FaserCalDisplay::ShowJetHits()
-    {
-        if (!gEve) gEve = TEveManager::Create();
+    // void FaserCalDisplay::ShowJetHits()
+    // {
+    //     if (!gEve) gEve = TEveManager::Create();
     
-        // Select the highest pT jet for visualization
-        if (fJets.empty()) {
-            std::cerr << "No jets found!" << std::endl;
-            return;
-        }
+    //     // Select the highest pT jet for visualization
+    //     if (fJets.empty()) {
+    //         std::cerr << "No jets found!" << std::endl;
+    //         return;
+    //     }
     
-        // Sort jets by pT
-        std::sort(fJets.begin(), fJets.end(), [](const fastjet::PseudoJet& a, const fastjet::PseudoJet& b) {
-            return a.pt() > b.pt();
-        });
+    //     // Sort jets by pT
+    //     std::sort(fJets.begin(), fJets.end(), [](const fastjet::PseudoJet& a, const fastjet::PseudoJet& b) {
+    //         return a.pt() > b.pt();
+    //     });
     
-        fastjet::PseudoJet selectedJet = fJets[0]; // Select the highest pT jet
+    //     fastjet::PseudoJet selectedJet = fJets[0]; // Select the highest pT jet
     
-        TEveLine *jetLine = new TEveLine();
-        jetLine->SetName("Jet Trajectory");
-        jetLine->SetMainColor(kRed);
-        jetLine->SetLineWidth(3);
+    //     TEveLine *jetLine = new TEveLine();
+    //     jetLine->SetName("Jet Trajectory");
+    //     jetLine->SetMainColor(kRed);
+    //     jetLine->SetLineWidth(3);
     
-        TEvePointSet *jetHits = new TEvePointSet();
-        jetHits->SetName("Jet Hits");
-        jetHits->SetMarkerColor(kBlue);
-        jetHits->SetMarkerStyle(20);
-        jetHits->SetMarkerSize(1.0);
-        std::cout << "here i am " << std::endl;
-        // Iterate over the jet's constituents (hit voxels)
-        for (const auto& constituent : selectedJet.constituents()) {
-            long hitID = constituent.user_index(); // Assuming user_index stores hit ID
+    //     TEvePointSet *jetHits = new TEvePointSet();
+    //     jetHits->SetName("Jet Hits");
+    //     jetHits->SetMarkerColor(kBlue);
+    //     jetHits->SetMarkerStyle(20);
+    //     jetHits->SetMarkerSize(1.0);
+    //     std::cout << "here i am " << std::endl;
+    //     // Iterate over the jet's constituents (hit voxels)
+    //     for (const auto& constituent : selectedJet.constituents()) {
+    //         long hitID = constituent.user_index(); // Assuming user_index stores hit ID
     
-            // Retrieve hit position in detector
-            ROOT::Math::XYZVector position = fTcalEvent->getChannelXYZfromID(hitID);
-            double x = position.X();
-            double y = position.Y();
-            double z = position.Z();
+    //         // Retrieve hit position in detector
+    //         ROOT::Math::XYZVector position = fTcalEvent->getChannelXYZfromID(hitID);
+    //         double x = position.X();
+    //         double y = position.Y();
+    //         double z = position.Z();
     
-            // Add hit points
-            jetHits->SetNextPoint(x, y, z);
+    //         // Add hit points
+    //         jetHits->SetNextPoint(x, y, z);
     
-            // Add to the jet trajectory
-            jetLine->SetNextPoint(x, y, z);
-        }
+    //         // Add to the jet trajectory
+    //         jetLine->SetNextPoint(x, y, z);
+    //     }
     
-        // Add elements to Eve
-        gEve->AddElement(jetLine);
-        gEve->AddElement(jetHits);
+    //     // Add elements to Eve
+    //     gEve->AddElement(jetLine);
+    //     gEve->AddElement(jetHits);
     
-        // Update the visualization
-        gEve->FullRedraw3D(kTRUE);    
+    //     // Update the visualization
+    //     gEve->FullRedraw3D(kTRUE);    
 
-        //gEve->Redraw3D(kTRUE);
-    }
+    //     //gEve->Redraw3D(kTRUE);
+    // }
 
 
 }  // namespace display
