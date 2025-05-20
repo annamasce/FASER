@@ -54,16 +54,16 @@ RUN git clone -b ${FASER_BRANCH} ${FASER_REPO}
 # Use FASER as main workspace
 WORKDIR /ws/FASER
 
+SHELL ["/bin/bash", "-c"]
+
 # Download and install ROOT
 RUN wget -q -O - https://root.cern/download/root_v6.32.12.Linux-ubuntu22.04-x86_64-gcc11.4.tar.gz | tar -xzvf -
 
 # Download, build and install Geant4
 RUN wget -q -O - https://github.com/Geant4/geant4/archive/refs/tags/v11.3.2.tar.gz | tar -xzvf - \
     && cmake -S geant4-11.3.2/ -B build -G Ninja -DCMAKE_INSTALL_PREFIX=$PWD/geant4-11.3.2-install -DGEANT4_INSTALL_DATA=ON \
-    && cmake --build build -j --target install \
+    && cmake --build build -j 8 --target install \
     && rm -rf build geant4-11.3.2
-
-SHELL ["/bin/bash", "-c"]
 
 # Download, build and install Pythia8
 RUN source root/bin/thisroot.sh \
@@ -72,8 +72,13 @@ RUN source root/bin/thisroot.sh \
 
 # Download, build and install CLHEP
 RUN make clhep \
-    && rm -rm CLHEP-build CLHEP
+    && rm -rf CLHEP-build CLHEP
 
 # Download, build and install Rave
 RUN make rave \
-    && rm -rm rave-0.6.25
+    && rm -rf rave-0.6.25
+
+# Download, build and install Rave
+RUN source setup.sh \
+    && make genfit \
+    && rm -rf GenFit-build GenFit

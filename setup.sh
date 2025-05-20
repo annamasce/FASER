@@ -1,5 +1,5 @@
 # TODO: FIX
-export HOMEFASER="/workspace/FASER"
+export HOMEFASER="/ws/FASER"
 
 echo "Sourcing FASER environment at: $HOMEFASER"
 
