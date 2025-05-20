@@ -1,9 +1,12 @@
-HOMEFASER=/home/rubbiaa/FASER
+# TODO: FIX
+export HOMEFASER="/workspace/FASER"
 
-source /home/rubbiaa/ROOT/root_install_v6.32.02/bin/thisroot.sh
-source /home/rubbiaa/geant4-install/bin/geant4.sh
-export PYTHIA8=/home/rubbiaa/ROOT/pythia8312
+echo "Sourcing FASER environment at: $HOMEFASER"
 
+source $HOMEFASER/root/bin/thisroot.sh
+source $HOMEFASER/geant4-11.3.2-install/bin/geant4.sh
+
+export PYTHIA8=$HOMEFASER/pythia-install
 export CLHEPINSTALL=$HOMEFASER/CLHEP-install
 export RAVEINSTALL=$HOMEFASER/rave-install
 export GENFITINSTALL=$HOMEFASER/GenFit-install
