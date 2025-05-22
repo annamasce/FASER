@@ -3,7 +3,7 @@ export HOMEFASER="/ws/FASER"
 
 echo "Sourcing FASER environment at: $HOMEFASER"
 
-source $HOMEFASER/root/bin/thisroot.sh
+source $HOMEFASER/root-install/bin/thisroot.sh
 source $HOMEFASER/geant4-11.3.2-install/bin/geant4.sh
 
 export PYTHIA8=$HOMEFASER/pythia-install

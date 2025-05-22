@@ -19,6 +19,7 @@ RUN apt-get update \
     g++ \
     gcc \
     git \
+    libboost-dev \
     libftgl-dev \
     libgif-dev \
     libgl1-mesa-dev \
@@ -49,15 +50,22 @@ FROM base AS dev
 # Clone FASER repo
 ARG FASER_REPO=https://github.com/annamasce/FASER.git
 ARG FASER_BRANCH=dbscan_studies
-RUN git clone -b ${FASER_BRANCH} ${FASER_REPO}
+# RUN git clone -b ${FASER_BRANCH} ${FASER_REPO}
+COPY . /ws/FASER
 
 # Use FASER as main workspace
 WORKDIR /ws/FASER
 
 SHELL ["/bin/bash", "-c"]
 
+# Download, build and install Pythia8
+RUN make pythia8 \
+    && rm -rf pythia8312
+
 # Download and install ROOT
-RUN wget -q -O - https://root.cern/download/root_v6.32.12.Linux-ubuntu22.04-x86_64-gcc11.4.tar.gz | tar -xzvf -
+# RUN wget -q -O - https://root.cern/download/root_v6.32.12.Linux-ubuntu22.04-x86_64-gcc11.4.tar.gz | tar -xzvf -
+RUN make root \
+    && rm -rf root root-build
 
 # Download, build and install Geant4
 RUN wget -q -O - https://github.com/Geant4/geant4/archive/refs/tags/v11.3.2.tar.gz | tar -xzvf - \
@@ -65,10 +73,6 @@ RUN wget -q -O - https://github.com/Geant4/geant4/archive/refs/tags/v11.3.2.tar.
     && cmake --build build -j 8 --target install \
     && rm -rf build geant4-11.3.2
 
-# Download, build and install Pythia8
-RUN source root/bin/thisroot.sh \
-    && make pythia8 \
-    && rm -rf pythia8312 pythia8312.tar
 
 # Download, build and install CLHEP
 RUN make clhep \
@@ -82,3 +86,7 @@ RUN make rave \
 RUN source setup.sh \
     && make genfit \
     && rm -rf GenFit-build GenFit
+
+# Build display app
+RUN source setup.sh \
+    && make display-app

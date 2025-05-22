@@ -86,14 +86,16 @@ googletest: googletest_git
 	-DCMAKE_INSTALL_PREFIX=$(TOPDIR)/googletest-install; \
 	cmake --build googletest-build -j 8 --target install;
 
-geant4-tar:
+geant4_tar:
 	if [ ! -d geant4-11.3.2 ]; then \
 		wget - q -O - https://github.com/Geant4/geant4/archive/refs/tags/v11.3.2.tar.gz | tar -xzvf - ; \
 	fi
 
-geant4: geant4-tar
-    cmake -S geant4-11.3.2/ -B build -G Ninja -DCMAKE_INSTALL_PREFIX=$PWD/geant4-11.3.2-install -DGEANT4_INSTALL_DATA=ON; \
-    cmake --build build -j 8 --target install;
+geant4: geant4_tar
+	cmake -S geant4-11.3.2 -B build \
+	-DCMAKE_INSTALL_PREFIX=$(TOPDIR)/geant4-11.3.2-install \
+	-DGEANT4_INSTALL_DATA=ON ; \
+	cmake --build build -j 8 --target install ;
 
 display-app:
 	cmake -B Display-build -S Display -DGenFit_DIR=$(TOPDIR)/GenFit-install; \
@@ -107,5 +109,3 @@ display-app:
 	rm -rf GenFit-build GenFit-install
 	rm -rf GenFit
 	rm -rf googletest googletest-install googletest-build
-
-
