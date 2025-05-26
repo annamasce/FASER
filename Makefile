@@ -1,5 +1,9 @@
 TOPDIR = $(shell pwd)
 
+UNAME_S := $(shell uname -s)
+
+UNAME_S := $(shell uname -s)
+
 PYTHIA8_DIR = $(TOPDIR)/pythia-install
 PYTHIA8_INCLUDE_DIR = $(PYTHIA8_DIR)/include
 PYTHIA8_LIBRARY = $(PYTHIA8_DIR)/lib/libpythia8.a
@@ -29,8 +33,16 @@ pythia8: pythia8_tar
 	if [ ! -d pythia-install ]; then \
 		cd pythia8312; \
 		./configure --prefix=$(TOPDIR)/pythia-install; \
-		make -j 8 ; \
-		make install ; \
+		make; \
+	fi
+
+clhep: clhep_git
+	if [ ! -d CLHEP-install ]; then \
+		mkdir -p CLHEP-build; \
+		mkdir -p CLHEP-install; \
+		cd CLHEP-build && cmake -DCLHEP_SINGLE_THREAD=ON -DCMAKE_INSTALL_PREFIX=../CLHEP-install ../CLHEP; \
+		make -j4; \
+		make install; \
 	fi
 
 clhep_git:
@@ -38,43 +50,69 @@ clhep_git:
 		git clone --depth 1 https://gitlab.cern.ch/CLHEP/CLHEP.git; \
 	fi
 
-clhep: clhep_git
-	cmake -B CLHEP-build -S CLHEP -DCMAKE_INSTALL_PREFIX=./CLHEP-install; \
-	cmake --build CLHEP-build -j 8 --target install;
-
-rave_tar: 
-	if [ ! -d rave-0.6.25 ]; then \
-		wget -q -O - https://rave.hepforge.org/downloads/?f=rave-0.6.25.tar.gz | tar --exclude=".svn" -xzvf - ; \
-	fi
-
-rave: rave_tar
+.PHONY: rave
+ifeq ($(UNAME_S),Darwin)
+rave: 
 	if [ ! -d rave-install ]; then \
 		mkdir -p rave-install; \
-		cd rave-0.6.25 && ./configure --prefix=$(TOPDIR)/rave-install --disable-java \
+		cd rave && ./configure --prefix=$(TOPDIR)/rave-install --disable-java --with-boost=/opt/homebrew --with-boost-libdir=/opt/homebrew/lib \
 		--with-clhep=$(TOPDIR)/CLHEP-install; \
-		make CXXFLAGS="-g -std=c++11" LHEPINCPATH=. -j 8 ; \
+		make CXXFLAGS="-g -std=c++11" LHEPINCPATH=. -j4; \
 		make install; \
 	fi
+else
+rave: 
+	if [ ! -d rave-install ]; then \
+		mkdir -p rave-install; \
+		cd rave && autoreconf && ./configure --prefix=$(TOPDIR)/rave-install --disable-java \
+		--with-clhep=$(TOPDIR)/CLHEP-install; \
+		make CXXFLAGS="-g -std=c++11" LHEPINCPATH=. -j4; \
+		make install; \
+	fi
+endif
 
 genfit_git:
 	if [ ! -d GenFit ]; then \
-		git clone --depth 1 https://github.com/GenFit/GenFit.git; \
+		git clone https://github.com/GenFit/GenFit.git; \
 		cd GenFit; \
 		patch -p0 -u -i ../genfit.patch; \
 	fi
 
+ifeq ($(UNAME_S),Darwin)
 genfit: genfit_git
-	cmake -B GenFit-build -S GenFit \
-	-DCMAKE_CXX_FLAGS="-g" \
-	-DCMAKE_BUILD_TYPE=Debug \
-	-DBUILD_TESTING=OFF \
-	-DCMAKE_INSTALL_PREFIX=$(TOPDIR)/GenFit-install \
-	-DGTEST_LIBRARY=$(TOPDIR)/googletest-install/lib/libgtest.a -DGTEST_INCLUDE_DIR=$(TOPDIR)/googletest-install/include \
-	-DGTEST_MAIN_LIBRARY=$(TOPDIR)/googletest-install/lib/libgtest_main.a \
-	-DRave_CFLAGS="-DRaveDllExport= -DWITH_FLAVORTAGGING -DWITH_KINEMATICS" \
-	-DRave_INCLUDE_DIRS=$(TOPDIR)/rave-install/include/ \
-	-DRave_LDFLAGS="-Wl,-rpath-link,$(TOPDIR)/rave-install/lib/ -L$(TOPDIR)/rave-install/lib/ -lRaveBase -L$(TOPDIR)/CLHEP-install/lib/ -lCLHEP" ; \
-	cmake --build GenFit-build -j 8 --target install; \
+	if [ ! -d GenFit-build ]; then \
+		mkdir -p GenFit-build; \
+		mkdir -p GenFit-install; \
+		cd GenFit-build && cmake \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DCMAKE_INSTALL_PREFIX=$(TOPDIR)/GenFit-install \
+		-DRave_CFLAGS="-DRaveDllExport= -DWITH_FLAVORTAGGING -DWITH_KINEMATICS" \
+		-DRave_INCLUDE_DIRS=$(TOPDIR)/rave-install/include/ \
+		-DRave_LDFLAGS="-L$(TOPDIR)/rave-install/lib/ -lRaveBase -L$(TOPDIR)/CLHEP-install/lib/ -lCLHEP" \
+		../GenFit; \
+		make CXXFLAFS="-g" -j; \
+		make install; \
+	fi
+else
+genfit: genfit_git
+	if [ ! -d GenFit-build ]; then \
+		mkdir -p GenFit-build; \
+		mkdir -p GenFit-install; \
+		cd GenFit-build && cmake \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DCMAKE_INSTALL_PREFIX=$(TOPDIR)/GenFit-install \
+		-DGTEST_LIBRARY=$(TOPDIR)/googletest-install/lib/libgtest.a -DGTEST_INCLUDE_DIR=$(TOPDIR)/googletest-install/include \
+		-DGTEST_MAIN_LIBRARY=$(TOPDIR)/googletest-install/lib/libgtest_main.a \
+		-DRave_CFLAGS="-DRaveDllExport= -DWITH_FLAVORTAGGING -DWITH_KINEMATICS" \
+		-DRave_INCLUDE_DIRS=$(TOPDIR)/rave-install/include/ \
+		-DRave_LDFLAGS="-Wl,-rpath-link,$(TOPDIR)/rave-install/lib/ -L$(TOPDIR)/rave-install/lib/ -lRaveBase -L$(TOPDIR)/CLHEP-install/lib/ -lCLHEP" \
+		../GenFit; \
+		make CXXFLAFS="-g" -j; \
+		sh CMakeFiles/gtests.dir/link.txt; \
+		make -j; \
+		make install; \
+	fi
+endif
 
 googletest_git:
 	if [ ! -d googletest ]; then \

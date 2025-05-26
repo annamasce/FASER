@@ -33,6 +33,7 @@ INCS = $(wildcard *.h)
 INCS += $(wildcard *.hh)
 INCS += $(wildcard $(COREUTILSDIR)/*.hh)
 
+LINKLIB := -L$(ROOTSYS)/lib `root-config --glibs` -lEG -lGeom $(GENFITLIBS)
 # ROOTCFLAGS += -fsanitize=address 
 
 all : $(EXE) $(EXE2) $(EXE3)
@@ -41,12 +42,11 @@ dict.cxx : $(INCS) $(SRC)
 	rootcling -f dict.cxx -c LinkDef.h -I$(COREUTILSDIR) -I$(GENFITINCDIR)
 
 $(EXE) : $(OBJ) Makefile
-	g++ $(ROOTCFLAGS) $(OBJ) `root-config --glibs` -lEG -lGeom $(GENFITLIBS) -o $@
-	g++ -shared -o libTPORec.so dict.o $(OBJCORE) -L$(ROOTSYS)/lib `root-config --glibs`
+	g++ $(ROOTCFLAGS) $(OBJ) $(LINKLIB) -o $@
+	g++ -shared -o libTPORec.so dict.o $(OBJCORE) $(LINKLIB)
 
 $(EXE2) : $(OBJ2) Makefile
-	g++ $(ROOTCFLAGS) $(OBJ2) `root-config --glibs` -lEG -lGeom $(GENFITLIBS) -o $@
-	g++ -shared -o libTPORec.so dict.o $(OBJCORE) -L$(ROOTSYS)/lib `root-config --glibs`
+	g++ $(ROOTCFLAGS) $(OBJ2) $(LINKLIB) -o $@
 
 $(EXE3) : $(OBJ3) Makefile
 	g++ $(ROOTCFLAGS) $(OBJ3) `root-config --glibs` -lEG -lGeom $(GENFITLIBS) -o $@

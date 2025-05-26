@@ -1,10 +1,18 @@
-# TODO: FIX
-export HOMEFASER="/ws/FASER"
+export HOMEFASER=$PWD
 
-echo "Sourcing FASER environment at: $HOMEFASER"
+echo "Setting up environment for FASER simulation"
+echo "Current working directory: $HOMEFASER"
 
-source $HOMEFASER/root-install/bin/thisroot.sh
-source $HOMEFASER/geant4-11.3.2-install/bin/geant4.sh
+source /home/rubbiaa/ROOT/root_install_v6.32.02/bin/thisroot.sh
+
+echo "Root installed in $HOMEFASER/ROOT/root_install"
+
+GEANT4_INSTALL=/home/rubbiaa/geant4-install/
+
+source $GEANT4_INSTALL/bin/geant4.sh
+echo "GEANT4 installed in $GEANT4_INSTALL"
+
+# export PYTHIA8=/home/rubbiaa/ROOT/pythia8312
 
 export PYTHIA8=$HOMEFASER/pythia-install
 export CLHEPINSTALL=$HOMEFASER/CLHEP-install
