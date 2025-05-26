@@ -19,6 +19,7 @@ ifeq ($(UNAME_S),Darwin)
     GENFITLIBS := -Wl,-rpath,$(GENFITINSTALL)/lib \
                   -Wl,-rpath,$(RAVEINSTALL)/lib \
                   -Wl,-rpath,$(CLHEPINSTALL)/lib \
+                  -Wl,-rpath,/opt/homebrew/lib \
                   -L$(GENFITINSTALL)/lib -lgenfit2 \
                   -L$(RAVEINSTALL)/lib -lRaveBase \
                   -L$(CLHEPINSTALL)/lib -lCLHEP
