@@ -49,8 +49,8 @@ $(EXE2) : $(OBJ2) Makefile
 	g++ $(ROOTCFLAGS) $(OBJ2) $(LINKLIB) -o $@
 
 $(EXE3) : $(OBJ3) Makefile
-	g++ $(ROOTCFLAGS) $(OBJ3) `root-config --glibs` -lEG -lGeom $(GENFITLIBS) -o $@
-	g++ -shared -o libTPORec.so dict.o $(OBJCORE) -L$(ROOTSYS)/lib `root-config --glibs`
+	g++ $(ROOTCFLAGS) $(OBJ3) $(LINKLIB) -o $@
+	g++ -shared -o libTPORec.so dict.o $(OBJCORE) $(LINKLIB)
 
 # Compile source files to object files
 %.o: %.C $(INCS)
