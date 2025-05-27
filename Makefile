@@ -14,6 +14,8 @@ OPEN_gl_LIBRARY=/usr/
 root_git:
 	if [ ! -d root ]; then \
 		git clone --branch v6-32-12 --depth=1 https://github.com/root-project/root.git root ; \
+		cd root; \
+		git apply ../root_patch.patch; \
 	fi
 
 root: root_git pythia8
@@ -33,7 +35,8 @@ pythia8: pythia8_tar
 	if [ ! -d pythia-install ]; then \
 		cd pythia8312; \
 		./configure --prefix=$(TOPDIR)/pythia-install; \
-		make; \
+		make -j 4; \
+		make install; \
 	fi
 
 clhep: clhep_git
@@ -140,7 +143,6 @@ display-app:
 	cmake --build Display-build -j 8 ;
 
 .PHONY clean:
-	rm -rf pythia-install pythia8312.tgz pythia8312
 	rm -rf CLHEP-build CLHEP-install
 	rm -rf CLHEP
 	rm -rf rave-0.6.25 rave-install

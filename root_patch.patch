@@ -1,0 +1,19 @@
+diff --git a/cmake/modules/SearchInstalledSoftware.cmake b/cmake/modules/SearchInstalledSoftware.cmake
+index 494d3199..fa2e16ef 100644
+--- a/cmake/modules/SearchInstalledSoftware.cmake
++++ b/cmake/modules/SearchInstalledSoftware.cmake
+@@ -565,7 +565,13 @@ find_package(Python3 3.8 COMPONENTS ${python_components})
+ #---Check for OpenGL installation-------------------------------------------------------
+ if(opengl)
+   message(STATUS "Looking for OpenGL")
+-  find_package(OpenGL)
++  if(APPLE)
++    set(CMAKE_FIND_FRAMEWORK FIRST)
++    find_package(OpenGL)
++    set(CMAKE_FIND_FRAMEWORK LAST)
++  else()
++    find_package(OpenGL)
++  endif()
+   if(NOT OPENGL_FOUND OR NOT OPENGL_GLU_FOUND)
+     if(fail-on-missing)
+       message(FATAL_ERROR "OpenGL package (with GLU) not found and opengl option required")
