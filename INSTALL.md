@@ -64,6 +64,7 @@ This will:
 
 2. Build RAVE
 
+cd rave && autoreconf -i && cd ..
 make rave
 
 This will:

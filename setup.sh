@@ -7,11 +7,9 @@ ROOT_INSTALL=$HOMEFASER/root-install
 source $ROOT_INSTALL/bin/thisroot.sh
 echo "Root installed in $ROOT_INSTALL"
 
-GEANT4_INSTALL=/Users/annamascellani/workspace/faser/FASER/geant4-11.3.2-install/
+GEANT4_INSTALL=$HOMEFASER/geant4-11.3.2-install/
 source $GEANT4_INSTALL/bin/geant4.sh
 echo "GEANT4 installed in $GEANT4_INSTALL"
-
-# export PYTHIA8=/Users/annamascellani/workspace/faser/FASER/pythia-install
 
 export PYTHIA8=$HOMEFASER/pythia-install
 export CLHEPINSTALL=$HOMEFASER/CLHEP-install
