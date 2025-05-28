@@ -142,6 +142,10 @@ display-app:
 	cmake -B Display-build -S Display -DGenFit_DIR=$(TOPDIR)/GenFit-install; \
 	cmake --build Display-build -j 8 ;
 
+charm-app:
+	cmake -B Charm-build -S Charm -DGenFit_DIR=$(TOPDIR)/GenFit-install; \
+	cmake --build Charm-build -j 8 ;
+
 .PHONY clean:
 	rm -rf CLHEP-build CLHEP-install
 	rm -rf CLHEP
@@ -149,3 +153,5 @@ display-app:
 	rm -rf GenFit-build GenFit-install
 	rm -rf GenFit
 	rm -rf googletest googletest-install googletest-build
+	rm -rf Display-build
+	rm -rf Charm-build

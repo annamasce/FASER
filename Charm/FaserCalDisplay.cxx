@@ -54,10 +54,7 @@ namespace display
   {
     std::cout << "Starting GetDetector()" << std::endl;
     // Load the GDML file using TGeoManager::Import
-    //TGeoManager::Import("/data/sw/FASERCAL/FASER/GeomGDML/geometry.gdml");
-    // use for Run120 and v5.0
-    //TGeoManager::Import("/home/hyperk/sw/FASERCAL/FASER_March2025/GeomGDML/geometry_v5.gdml");
-    TGeoManager::Import("../../GeomGDML/geometry_v5.gdml");
+    TGeoManager::Import("../GeomGDML/geometry_v5.gdml");
     //
     if (!gGeoManager) {
       std::cerr << "Failed to import GDML file." << std::endl;
