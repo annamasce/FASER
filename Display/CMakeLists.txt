@@ -20,6 +20,11 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake") # (Find*.
 
 # Find libraries
 find_package(GenFit REQUIRED)
+# Include GenFit headers
+include_directories(${GenFit_INCLUDE_DIRS})
+# get_filename_component(GenFit_LIBRARY_DIR "${GenFit_LIBRARIES}" DIRECTORY)
+# set(GenFit_LIBRARY_DIR "${GenFit_LIBRARY_DIR}" CACHE PATH "Path to GenFit library directory")
+# link_directories(${GenFit_LIBRARY_DIR})
 
 # # Include PandoraPAF headers
 # include_directories(/data/sw/products/PandoraPFA/install/include)
@@ -49,13 +54,6 @@ find_package(GenFit REQUIRED)
 # include_directories(${FASTJET_INCLUDE_DIRS})
 # link_directories(${FASTJET_DIR}/lib)
 
-# Include GenFit headers
-include_directories(${GenFit_INCLUDE_DIRS})
-# Link GenFit libraries
-get_filename_component(GenFit_LIBRARY_DIR "${GenFit_LIBRARIES}" DIRECTORY)
-set(GenFit_LIBRARY_DIR "${GenFit_LIBRARY_DIR}" CACHE PATH "Path to GenFit library directory")
-link_directories(${GenFit_LIBRARY_DIR})
-
 # Define the source files
 set(SOURCES
     FaserCalDisplay.cxx
@@ -78,17 +76,14 @@ root_generate_dictionary(G__FaserCalDisplay FaserCalDisplay.h LINKDEF disp_linkd
 
 # Create shared library for FaserCalDisplay
 add_library(FaserCalDisplay SHARED ${SOURCES} G__FaserCalDisplay.cxx)
+target_include_directories(FaserCalDisplay PRIVATE ${ROOT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} ${CoreUtils_INCLUDE_DIRS} ${GenFit_INCLUDE_DIRS})
+target_link_libraries(FaserCalDisplay ${ROOT_LIBRARIES} ${GenFit_LIBRARIES})
 
 # Add executable
 #add_executable(FaserCalDisplay ${SOURCES} G__FaserCalDisplay.cxx)
 
 add_executable(FaserCalDisplayApp main.cxx)
-
-# Include directories
-target_include_directories(FaserCalDisplay PRIVATE ${ROOT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} ${CoreUtils_INCLUDE_DIRS} ${GenFit_INCLUDE_DIRS})
 target_include_directories(FaserCalDisplayApp PRIVATE ${ROOT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} ${CoreUtils_INCLUDE_DIRS} ${GenFit_INCLUDE_DIRS})
-
-target_link_libraries(FaserCalDisplay ${ROOT_LIBRARIES} ${GenFit_LIBRARIES})
 # target_link_libraries(FaserCalDisplayApp FaserCalDisplay stdc++fs ${ROOT_LIBRARIES} ${GENFIT_LIB} ${PANDORA_SDK_LIB} ${PANDORA_MON_LIB} ${FASTJET_LIB})
 target_link_libraries(FaserCalDisplayApp PUBLIC FaserCalDisplay ${ROOT_LIBRARIES} ${GenFit_LIBRARIES})
 
