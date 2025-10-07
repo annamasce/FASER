@@ -51,7 +51,7 @@ void LoadAllRecoEvents(display::FaserCalDisplay* display, int runNumber, int max
   int CharmType, CCNC, neutrinoType;
   double neutrinoEnergy;
   double prim_vx, prim_vy, prim_vz;
-  double TotalEnergy, VisibleEnergy, RearECalEnergy, RearHCalEnergy,RearMuCalEnergy;
+  double TotalEnergy, VisibleEnergy, RearECalEnergy, RearHCalEnergy, RearMuCalEnergy, FaserCalEnergy;
   Int_t max_vertices = 100;
   Int_t n_vertices;
   Float_t v_x[max_vertices], v_y[max_vertices], v_z[max_vertices];
@@ -127,6 +127,7 @@ void LoadAllRecoEvents(display::FaserCalDisplay* display, int runNumber, int max
   tree->Branch("RearECalEnergy", &RearECalEnergy,"RearECalEnergy/D");
   tree->Branch("RearHCalEnergy", &RearHCalEnergy,"RearHCalEnergy/D");
   tree->Branch("RearMuCalEnergy", &RearMuCalEnergy,"RearMuCalEnergy/D");
+  tree->Branch("FaserCalEnergy", &FaserCalEnergy,"FaserCalEnergy/D");
 
 
   tree->Branch("MuTag_alltrk", &display->fmuTag_alltrk);
@@ -145,9 +146,13 @@ void LoadAllRecoEvents(display::FaserCalDisplay* display, int runNumber, int max
   TDatabasePDG* pdgDB = TDatabasePDG::Instance();
   display->AddCustomNucleusParticles(); 
 
+  int n_events_processed = 0;
 
   for (const std::string& file_path : reco_file_paths) 
     {
+      if ((maxEvents != -1) && (n_events_processed >= maxEvents)){
+        break;
+      }
       std::string base_name = std::filesystem::path(file_path).stem().string();
       std::cout << file_path << std::endl;
 
@@ -171,6 +176,9 @@ void LoadAllRecoEvents(display::FaserCalDisplay* display, int runNumber, int max
       
       while (error == 0 && ievent<nentries) 
 	{
+    if ((maxEvents != -1) && (n_events_processed >= maxEvents)){
+      break;
+    }
 	  event_tree->GetEntry(ievent);
 	  
 	  if(ievent % 1000 == 0) {
@@ -245,7 +253,18 @@ void LoadAllRecoEvents(display::FaserCalDisplay* display, int runNumber, int max
 		    << RearHCalEnergy << " "
 		    << RearMuCalEnergy << " "
 		    << std::endl;
-	 
+
+    // store energies in FaserCal
+    double totalFaserCal = 1e-9; // to avoid division by zero
+    int istart = 0;
+    for(int i=0; i<fTPORecoEvent->faserCals.size(); i++) {
+        double edep = fTPORecoEvent->faserCals[i].EDeposit;
+        totalFaserCal += edep;
+        if(edep>10.0 && istart == 0) istart = i;
+        // event.faserCal_frac[i] = 0;
+    }
+    FaserCalEnergy = totalFaserCal;
+    std::cout << "FaserCal energy: " << totalFaserCal << std::endl;	 
 	  
 	   input_file_path = input_folder_path + "FASERG4-Tcalevent_" +std::to_string(runNumber)+"_"+std::to_string(eventNumber)+".root";
 	   std::cout << input_file_path << std::endl;
@@ -316,6 +335,7 @@ void LoadAllRecoEvents(display::FaserCalDisplay* display, int runNumber, int max
 	  tree->Fill();
 
 	  ievent++;
+    n_events_processed++;
 	  delete display->POevent;
 	  delete display->fTcalEvent;
 	}

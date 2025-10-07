@@ -1708,8 +1708,9 @@ namespace display
       fPORecoEvent->ReconstructClusters(0);   
       fPORecoEvent->ReconstructClusters(1);   
 
-      std::cout << "DBSCAC in 3D" << std::endl;
+      std::cout << "DBSCAN in 3D" << std::endl;
       fPORecoEvent->Reconstruct3DClusters();
+      // fPORecoEvent->Reconstruct3DClusters_nearVtx();
 
       fPORecoEvent->Reconstruct3DPS_Eflow();
       fPORecoEvent->TrackReconstruct();

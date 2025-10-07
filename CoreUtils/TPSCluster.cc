@@ -63,7 +63,7 @@ void TPSCluster::ComputeCOG() {
 
 void TPSCluster::ComputeLongProfile(int verbose) {
 
-    const int nBins = 30;
+    const int nBins = 10;
     double mint = 0.0;
     double maxt = 30.0;    // in radiation lengths
     double binWidth = (maxt - mint) / nBins;
@@ -73,8 +73,10 @@ void TPSCluster::ComputeLongProfile(int verbose) {
     std::vector<double> energyProfile(nBins, 0.0);
 
     ROOT::Math::XYZVector directionVec = cog - vtx;
-    TVector3 direction((view==0) ? directionVec.X() : 0, (view!=0) ? directionVec.Y() : 0, directionVec.Z());
+    TVector3 direction((view==1) ? 0 : directionVec.X(), (view==0) ? 0 : directionVec.Y(), directionVec.Z());
     direction = direction.Unit();
+
+    std::cout << "Fitting energy profile of cluster with view = " << view << std::endl;
 
     for (auto &it : hits)
     {
@@ -82,7 +84,8 @@ void TPSCluster::ComputeLongProfile(int verbose) {
         float ehit = it.EDeposit;
         ROOT::Math::XYZVector position = fTcalEvent->getChannelXYZfromID(ID);
         ROOT::Math::XYZVector hitdirection = position - vtx;
-        if( view == 0 ) { hitdirection.SetY(0); } else { hitdirection.SetX(0); };
+        if( view == 0 ) { hitdirection.SetY(0); } 
+        else if (view == 1) { hitdirection.SetX(0); }
         TVector3 hitDirVec(hitdirection.X(), hitdirection.Y(), hitdirection.Z());
         double t = hitDirVec.Dot(direction)*conversionX0;
         int binIndex = static_cast<int>((t - mint) / binWidth);        
@@ -102,7 +105,7 @@ void TPSCluster::ComputeLongProfile(int verbose) {
     if(hist != nullptr) {
         hist->Reset();
     } else {
-       hist = new TH1D("TPSclusterenergyProfile", "Cluster Longitudinal Energy Profile", nBins, 0, nBins);
+       hist = new TH1D("TPSclusterenergyProfile", "Cluster Longitudinal Energy Profile", nBins, mint, maxt);
     } 
     
     for (int i = 0; i < nBins; ++i) {
@@ -112,11 +115,12 @@ void TPSCluster::ComputeLongProfile(int verbose) {
     // Create the TF1 object using the fitting function
     TF1* fitFunc = (TF1*)gDirectory->Get("TPSclusterenergyfitFunc");
     if(fitFunc == nullptr)
-        fitFunc = new TF1("TPSclusterenergyfitFunc", energyProfileFunc, 0, nBins, 3);
+        fitFunc = new TF1("TPSclusterenergyfitFunc", energyProfileFunc, mint, maxt, 3);
 
     // Set initial parameter guesses
-    fitFunc->SetParameters(rawenergy, 2.0, 0.6);  
-    fitFunc->FixParameter(2, 0.6);
+    fitFunc->SetParameters(rawenergy, 2.0, 0.6); 
+    fitFunc->SetRange(mint, maxt);  
+    // fitFunc->FixParameter(2, 0.6);
 
     // Perform the fit and capture the result
     TFitResultPtr fitStatus = hist->Fit("TPSclusterenergyfitFunc", "S R"); // "S" option is required to get the fit status

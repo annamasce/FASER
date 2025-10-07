@@ -19,5 +19,6 @@ googletest-install/
 build/
 rave*/
 pythia*/
+root*/
 *#
 *~

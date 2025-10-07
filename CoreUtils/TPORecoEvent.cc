@@ -8,6 +8,7 @@
 #include <TDecompSVD.h>
 #include <TVector3.h>
 #include <TCanvas.h>
+#include <TF1.h>
 
 // GENFIT
 #include <GFRaveVertexFactory.h>
@@ -1897,7 +1898,6 @@ void TPORecoEvent::Reconstruct3DClusters()
 
   // later on get them directly from geometry
   double voxelSize = 1; // cm
-  double gapSize = 5; // cm ??
   int layerPerVolume = 20;
 
   for (const auto& v : PSvoxelmap)
@@ -1935,6 +1935,9 @@ void TPORecoEvent::Reconstruct3DClusters()
 // I need to define different eps and npoints for 3D dbscan
   int eps = 2;
   int minPts = 10;
+  std::cout << "DBSCAN3D: using following DBscan parameters: " << std::endl;
+  std::cout << "eps:    " << eps << std::endl;
+  std::cout << "minPts: " << minPts << std::endl;
 
   //dbscan.scan3D(points, recoConfig.clusters_eps, recoConfig.clusters_minPts);
   dbscan.scan3D(points, eps, minPts);
@@ -1973,15 +1976,19 @@ void TPORecoEvent::Reconstruct3DClusters()
     PSClusters3D.push_back(c.second);
   }
 
+    std::sort(PSClusters3D.begin(), PSClusters3D.end(), [](const TPSCluster& a, const TPSCluster& b) {
+      return a.rawenergy > b.rawenergy;
+    });
+
+    int i_test = 0;
+
   for (auto &c : PSClusters3D) {
+    if (i_test > 0) break;
     c.ComputeCOG();
     c.setVtx(primary.x(), primary.y(), primary.z());
     c.ComputeLongProfile(verbose);
+    i_test++;
   }
-
-  std::sort(PSClusters3D.begin(), PSClusters3D.end(), [](const TPSCluster& a, const TPSCluster& b) {
-      return a.rawenergy > b.rawenergy;
-    });
 
   // for debug
   std::cout << "DBSCAN3D: number of clusters after energy cuts = " << PSClusters3D.size() << std::endl;
@@ -2013,7 +2020,241 @@ void TPORecoEvent::Reconstruct3DClusters()
 
 /////////////////////
 
+int TPORecoEvent::moduleIDfromZ(double z) {
+    int nLayer = 0;
+    for (int i = 0; i < fTcalEvent->geom_detector.NRep; i++) {
+        if (z < (i + 1) * geom_detector.fSandwichLength - fTcalEvent->geom_detector.fTotalLength / 2.0) {
+            nLayer = i;
+            break;
+        }           
+    }
+    return nLayer;
+}
 
+//////////////
+void TPORecoEvent::Reconstruct3DClusters_nearVtx() {
+
+    std::cout << "Start Reconstruct3DClusters in new function..." << std::endl;
+
+    int primVtx_layer =  moduleIDfromZ(fTPOEvent->prim_vx.Z());
+    std::cout << "Primary Vertex Z: " << fTPOEvent->prim_vx.Z() << std::endl;
+    std::cout << "Corresponding module ID: " << primVtx_layer << std::endl;
+  
+    DBScan dbscan;
+    std::map<int, TPSCluster> PSClusters3DMap;
+    std::vector<DBScan::Point3D> points;
+
+    for (const auto& v : PSvoxelmap){
+        long ID = v.first;
+        long ix = ID % 1000;
+        long iy = (ID / 1000) % 1000;
+        long iz = (ID / 1000000) % 1000;
+        int nzlayer = fTcalEvent->geom_detector.fSandwichLength / fTcalEvent->geom_detector.fScintillatorVoxelSize;
+        long ilayer = fTcalEvent->getChannelModulefromID(ID);
+        if ( (ilayer != primVtx_layer) && (ilayer != primVtx_layer + 1) ) continue;
+        // std::cout << "Corresponding module ID: " << moduleIDfromZ(fTPOEvent->prim_vx.Z()) << std::endl;
+        double fix = ix + 0.5;
+        double fiy = iy + 0.5;
+        double fiz = ilayer * nzlayer + iz + 0.5;
+
+        // //adjusting gap in Z
+        double scintZ = fTcalEvent -> geom_detector.fSandwichLength - 2.0 * fTcalEvent->geom_detector.fAlPlateThickness - fTcalEvent->geom_detector.fAirGap - fTcalEvent->geom_detector.fTargetSizeZ;
+        int nzlayer_scint = scintZ / fTcalEvent->geom_detector.fScintillatorVoxelSize;
+        double adjustedZ = ilayer * nzlayer_scint + iz + 0.5;
+        
+        double e = v.second.RawEnergy;
+        // std::cout << ID << " " << ilayer << " " << fix << " " << fiy << " " << fiz << " " << e << " " << adjustedZ << " " << std::endl;
+        if (e < recoConfig.clusters_threshold_2dhit) // need for summing up 3D??? but in Z we would have saturation so lets forget about it
+            continue;
+        
+        DBScan::Point3D p = {ID, e, fix, fiy, adjustedZ};
+        points.push_back(p);
+    }
+
+    std::cout << "DBSCAN3D: total hits = " << points.size() << std::endl;
+  
+    // I need to define different eps and npoints for 3D dbscan
+    int eps = 2;
+    int minPts = 10;
+    std::cout << "DBSCAN3D: using following DBscan parameters: " << std::endl;
+    std::cout << "eps:    " << eps << std::endl;
+    std::cout << "minPts: " << minPts << std::endl;
+
+    //dbscan.scan3D(points, recoConfig.clusters_eps, recoConfig.clusters_minPts);
+    dbscan.scan3D(points, eps, minPts);
+
+    std::set<int> clusterIDs;
+
+    for (const auto& point : points) {
+        if (point.clusterID == 0) continue;
+        if (point.clusterID > 0) clusterIDs.insert(point.clusterID);
+
+        TPSCluster::PSCLUSTERHIT hit = {point.ID, static_cast<float>(point.ehit)};
+        auto c = PSClusters3DMap.find(point.clusterID);
+        if (c != PSClusters3DMap.end()) {
+            c->second.hits.push_back(hit);
+            c->second.rawenergy += point.ehit;
+        } 
+        else {
+            TPSCluster newc(2, fTcalEvent);  // '2' indicates 3D
+            newc.clusterID = point.clusterID;
+            newc.rawenergy = point.ehit;
+            newc.hits.push_back(hit);
+            PSClusters3DMap[point.clusterID] = newc;
+        }
+    }
+
+    std::cout << "DBSCAN3D: found clusters = " << clusterIDs.size() << std::endl;
+
+    ROOT::Math::XYZVector primary(fTPOEvent->prim_vx.X(), fTPOEvent->prim_vx.Y(), fTPOEvent->prim_vx.Z());
+    PSClusters3D_nearVtx.clear();
+    for (auto& c : PSClusters3DMap) {
+        if (c.second.rawenergy < recoConfig.clusters_threshold_cluster) continue;
+        PSClusters3D_nearVtx.push_back(c.second);
+    }
+
+    for (auto &c : PSClusters3D_nearVtx) {
+        c.ComputeCOG();
+        c.setVtx(primary.x(), primary.y(), primary.z());
+        c.ComputeLongProfile(verbose);
+    }
+
+    std::sort(PSClusters3D_nearVtx.begin(), PSClusters3D_nearVtx.end(), [](const TPSCluster& a, const TPSCluster& b) {return a.rawenergy > b.rawenergy;});
+    for (const auto &c : PSClusters3D_nearVtx) {
+        std::cout << "3D Cluster ID: " << c.clusterID << " nhits = " << c.hits.size()
+            << " rawEnergy(MeV): " << c.rawenergy << std::endl;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// Define the fitting function
+static double energyProfileFunc(double *x, double *par) {
+    double t = x[0];          // Independent variable (e.g., bin center)
+    double E0 = par[0];       // E0 parameter
+    double a = par[1];        // a parameter (shape)
+    double b = par[2];        // b parameter (scale)
+    
+    double gamma_a = TMath::Gamma(a);
+    double term1 = pow(b * t, a - 1);
+    double term2 = exp(-b * t);
+    
+    return E0 * b * (term1 * term2 / gamma_a);
+}
+
+void TPORecoEvent::ComputeEnergyProfile() {
+
+    std::cout << "CoG: " << fPOFullRecoEvent->fTotal.cog.X() << " " << fPOFullRecoEvent->fTotal.cog.Y() << " " << fPOFullRecoEvent->fTotal.cog.Z() << std::endl;
+
+    const int nBins = 10;
+    double mint = 0.0;
+    double maxt = 6.0;    // in radiation lengths
+    double binWidth = (maxt - mint) / nBins;
+    double conversionX0 = 0.78/(52.2*5) ;  /// in X0/mm MAKE SURE THIS IS CORRECT IF CHANGE GEOMETRY !!!
+
+    // Initialize an array to store the energy in each bin
+    std::vector<double> energyProfile(nBins, 0.0);
+
+    ROOT::Math::XYZVector primary(fTPOEvent->prim_vx.X(), fTPOEvent->prim_vx.Y(), fTPOEvent->prim_vx.Z());
+    ROOT::Math::XYZVector direction = fPOFullRecoEvent->fTotal.cog - primary;
+    direction = direction.Unit();
+
+    std::cout << "Fitting full energy profile..." << std::endl;
+
+    double totalEnergy = 0.;
+
+    for (const auto& v : PSvoxelmap) {
+        long ID = v.first;
+        ROOT::Math::XYZVector position = fTcalEvent -> getChannelXYZfromID(ID);
+        double ehit = v.second.RawEnergy;
+        ROOT::Math::XYZVector voxDirection = position - primary;
+        double t = voxDirection.Dot(direction) * conversionX0;
+        int binIndex = static_cast<int>((t - mint) / binWidth);        
+        if (binIndex >= 0 && binIndex < nBins) {
+            energyProfile[binIndex] += ehit;
+        }
+        totalEnergy += ehit;
+    }
+
+//     if(verbose > 1) {
+//      for (int i = 0; i < nBins; ++i) {
+//         std::cout << "t: " << i*binWidth << ": " << energyProfile[i] << " MeV" << std::endl;
+//     }
+//     }
+
+    // profile histrogram
+    TH1D* hist = (TH1D*)gDirectory->Get("TPORecoEventEnergyProfile");
+    if(hist != nullptr) {
+        hist->Reset();
+    } else {
+       hist = new TH1D("TPORecoEventEnergyProfile", "Event Longitudinal Energy Profile", nBins, mint, maxt);
+    } 
+    
+    for (int i = 0; i < nBins; ++i) {
+        hist->SetBinContent(i+1, energyProfile[i]);
+    }
+
+    // Create the TF1 object using the fitting function
+    TF1* fitFunc = (TF1*)gDirectory->Get("TPORecoEventEnergyFitFunc");
+    if(fitFunc == nullptr)
+        fitFunc = new TF1("TPORecoEventEnergyFitFunc", energyProfileFunc, mint, maxt, 3);
+
+    // Set initial parameter guesses
+    fitFunc->SetParameters(totalEnergy, 3.0, 0.005); 
+    fitFunc->SetRange(mint, 0.8*maxt);  
+    // fitFunc->FixParameter(2, 0.6);
+
+    // Perform the fit and capture the result
+    TFitResultPtr fitStatus = hist->Fit("TPORecoEventEnergyFitFunc", "S R"); // "S" option is required to get the fit status
+    if (fitStatus != 0) {
+        std::cout << "Fit failed with status: " << fitStatus << std::endl;
+        // Handle the failure case
+    }
+
+//     // Extract the fit parameters
+//     double E0 = fitFunc->GetParameter(0);
+//     double a = fitFunc->GetParameter(1);
+//     double b = fitFunc->GetParameter(2);
+//     double tmax = (a-1)/b;
+//     ///////////////////////////////////////////////////////////////////////
+//     double critical_energy = 23.82; // ad-hoc  (W 8 MeV)
+//     ///////////////////////////////////////////////////////////////////////
+//     double y = rawenergy / critical_energy;
+//     double c = tmax-std::log(y);
+
+    double chi2 = fitFunc->GetChisquare();
+    int ndf = fitFunc->GetNDF();
+    double chi2_per_ndf = chi2 / ndf;
+
+//     longenergyprofile.chi2 = chi2;
+//     longenergyprofile.chi2_per_ndf = chi2_per_ndf;
+//     longenergyprofile.E0 = E0;
+//     longenergyprofile.a = a;
+//     longenergyprofile.b = b;
+//     longenergyprofile.tmax = tmax;
+//     longenergyprofile.y = y;
+//     longenergyprofile.c = c;
+
+//     if(verbose < 1) return;
+
+//     std::cout << "Fitted parameters:" << std::endl;
+//     std::cout << "E0 = " << E0 << std::endl;
+//     std::cout << "a = " << a << std::endl;
+//     std::cout << "b = " << b << std::endl;
+//     std::cout << "tmax = " << tmax << std::endl;
+//     std::cout << "c = " << c << std::endl;
+
+// #if 0
+    // Visualize the results
+    TCanvas *c1 = new TCanvas("TPSclusterenergycanvas", "Energy Profile Fit", 800, 600);
+    hist->Draw();
+    fitFunc->Draw("SAME");
+    hist->GetXaxis()->SetTitle("Depth [X_{0}]");
+    hist->GetYaxis()->SetTitle("Energy [MeV]");
+    c1->SetLeftMargin(0.15);
+    c1->Print("test.pdf");
+// #endif
+}
 
 
 void TPORecoEvent::Reconstruct3DPS(int maxIter) {

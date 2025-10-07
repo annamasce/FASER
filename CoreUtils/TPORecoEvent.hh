@@ -119,9 +119,15 @@ public:
       return (view == 0) ? PSClustersX : PSClustersY;
     }
 
-  std::vector<TPSCluster> PSClusters3D;
-  const std::vector<TPSCluster>* GetPSClusters3D() const { return &PSClusters3D; }
-  void Reconstruct3DClusters();
+    std::vector<TPSCluster> PSClusters3D;
+    const std::vector<TPSCluster>* GetPSClusters3D() const { return &PSClusters3D; }
+    void Reconstruct3DClusters();
+
+
+    std::vector<TPSCluster> PSClusters3D_nearVtx;
+    const std::vector<TPSCluster>* GetPSClusters3D_nearVtx() const { return &PSClusters3D_nearVtx; }
+    void Reconstruct3DClusters_nearVtx();
+    int moduleIDfromZ(double z);
 
     struct PSVOXEL3D {
         long ID;
@@ -264,6 +270,8 @@ public:
         std::vector<std::vector<float>> &XZ, std::vector<std::vector<float>> &YZ, std::vector<std::vector<std::vector<float>>> &XY,
         std::vector<int>& nvox_per_layer, int nvox_per_layer_max, int nzlayer);
     void Reconstruct3DPS_Eflow();
+
+    void ComputeEnergyProfile();
 
     /// @brief Recontruct particle tracks from 3D PS voxels
     void PSVoxelParticleFilter();
